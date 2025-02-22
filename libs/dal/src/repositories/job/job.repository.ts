@@ -1,6 +1,7 @@
 import { ProjectionType } from 'mongoose';
 import { DigestTypeEnum, IDigestRegularMetadata, StepTypeEnum, DigestCreationResultEnum } from '@novu/shared';
 
+import { sub, isBefore } from 'date-fns';
 import { BaseRepository } from '../base-repository';
 import { JobEntity, JobDBModel, JobStatusEnum } from './job.entity';
 import { Job } from './job.schema';
@@ -10,7 +11,6 @@ import { NotificationEntity } from '../notification';
 import { EnvironmentEntity } from '../environment';
 import type { EnforceEnvOrOrgIds, IUpdateResult } from '../../types';
 import { DalException } from '../../shared';
-import { sub, isBefore } from 'date-fns';
 
 type JobEntityPopulated = JobEntity & {
   template: NotificationTemplateEntity;
@@ -32,8 +32,9 @@ export class JobRepository extends BaseRepository<JobDBModel, JobEntity, Enforce
 
   public async storeJobs(jobs: Omit<JobEntity, '_id' | 'createdAt' | 'updatedAt'>[]): Promise<JobEntity[]> {
     const stored: JobEntity[] = [];
-    for (let index = 0; index < jobs.length; index++) {
+    for (let index = 0; index < jobs.length; index += 1) {
       if (index > 0) {
+        // eslint-disable-next-line no-param-reassign
         jobs[index]._parentId = stored[index - 1]._id;
       }
 
@@ -188,9 +189,10 @@ export class JobRepository extends BaseRepository<JobDBModel, JobEntity, Enforce
       job.digest?.type === DigestTypeEnum.BACKOFF ||
       (job.digest as IDigestRegularMetadata)?.backoff ||
       (digestMeta?.backoff && digestMeta?.backoff);
+    const digestQuery = this.buildDigestQuery(digestKey, digestValue);
 
     if (isBackoff) {
-      const trigger = await this.getTrigger(job, digestMeta, digestKey, digestValue);
+      const trigger = await this.getTriggerJob(job, digestMeta, digestQuery);
       if (!trigger) {
         return {
           digestResult: DigestCreationResultEnum.SKIPPED,
@@ -218,7 +220,7 @@ export class JobRepository extends BaseRepository<JobDBModel, JobEntity, Enforce
         _templateId: job._templateId,
         _environmentId: this.convertStringToObjectId(job._environmentId),
         _subscriberId: this.convertStringToObjectId(job._subscriberId),
-        ...(digestKey && { [`payload.${digestKey}`]: digestValue }),
+        ...digestQuery,
       },
       '_id _notificationId'
     );
@@ -251,18 +253,22 @@ export class JobRepository extends BaseRepository<JobDBModel, JobEntity, Enforce
     };
   }
 
+  private buildDigestQuery(digestKey: string | undefined, digestValue: string | number | undefined) {
+    const digestQueryV1 = digestKey ? { [`payload.${digestKey}`]: digestValue } : null;
+    // Digest key parsing is handled by the framework, leaving only the digest value available here
+    const digestQueryV2 = !digestKey && digestValue ? { [`digest.digestValue`]: digestValue } : null;
+    const digestQuery = digestQueryV1 || digestQueryV2;
+
+    return digestQuery || {};
+  }
+
   private getBackoffDate(metadata: IDigestRegularMetadata | undefined) {
     return sub(new Date(), {
       [metadata?.backoffUnit as string]: metadata?.backoffAmount,
     });
   }
 
-  private getTrigger(
-    job: JobEntity,
-    metadata?: IDigestRegularMetadata,
-    digestKey?: string,
-    digestValue?: string | number
-  ) {
+  private getTriggerJob(job: JobEntity, metadata?: IDigestRegularMetadata, digestQuery?: Record<string, unknown>) {
     const query = {
       updatedAt: {
         $gte: this.getBackoffDate(metadata),
@@ -275,7 +281,7 @@ export class JobRepository extends BaseRepository<JobDBModel, JobEntity, Enforce
       type: StepTypeEnum.TRIGGER,
       _environmentId: job._environmentId,
       _subscriberId: job._subscriberId,
-      ...(digestKey && { [`payload.${digestKey}`]: digestValue }),
+      ...digestQuery,
     };
 
     return this.findOne(query);
@@ -321,5 +327,32 @@ export class JobRepository extends BaseRepository<JobDBModel, JobEntity, Enforce
     }
 
     return updatedJobs;
+  }
+
+  public async cancelPendingJobs({
+    _environmentId,
+    transactionId,
+    _subscriberId,
+    _templateId,
+  }: {
+    _environmentId: string;
+    transactionId: string;
+    _subscriberId: string;
+    _templateId: string;
+  }): Promise<IUpdateResult> {
+    return this.MongooseModel.updateMany(
+      {
+        _environmentId,
+        _subscriberId,
+        _templateId,
+        status: JobStatusEnum.PENDING,
+        transactionId,
+      },
+      {
+        $set: {
+          status: JobStatusEnum.CANCELED,
+        },
+      }
+    );
   }
 }

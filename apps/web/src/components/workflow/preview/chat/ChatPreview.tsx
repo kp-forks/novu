@@ -1,14 +1,14 @@
 import { useFormContext } from 'react-hook-form';
 import { useLocation } from 'react-router-dom';
 
+import { useEffect, useState } from 'react';
+import { useMutation } from '@tanstack/react-query';
 import { IForm } from '../../../../pages/templates/components/formTypes';
 import { useStepFormPath } from '../../../../pages/templates/hooks/useStepFormPath';
 import { useTemplateLocales } from '../../../../pages/templates/hooks/useTemplateLocales';
 import { usePreviewChatTemplate } from '../../../../pages/templates/hooks/usePreviewChatTemplate';
-import { useEffect, useState } from 'react';
 import { api } from '../../../../api';
 import { useEnvironment } from '../../../../hooks/useEnvironment';
-import { useMutation } from '@tanstack/react-query';
 import { useTemplateEditorForm } from '../../../../pages/templates/components/TemplateEditorFormProvider';
 import { ChatBasePreview } from './ChatBasePreview';
 
@@ -21,7 +21,7 @@ export function ChatPreview({
 }) {
   const { watch, formState } = useFormContext<IForm>();
   const { template } = useTemplateEditorForm();
-  const { bridge } = useEnvironment({}, template?.bridge);
+  const { bridge } = useEnvironment({ bridge: template?.bridge });
   const path = useStepFormPath();
   const content = watch(`${path}.template.content`);
   const { pathname } = useLocation();
@@ -33,14 +33,11 @@ export function ChatPreview({
     mutateAsync,
     isLoading: isBridgeLoading,
     error: previewError,
-  } = useMutation(
-    (data) => api.post('/v1/bridge/preview/' + formState?.defaultValues?.identifier + '/' + stepId, data),
-    {
-      onSuccess(data) {
-        setBridgeContent(data.outputs.body);
-      },
-    }
-  );
+  } = useMutation((data) => api.post(`/v1/bridge/preview/${formState?.defaultValues?.identifier}/${stepId}`, data), {
+    onSuccess(data) {
+      setBridgeContent(data.outputs.body);
+    },
+  });
 
   useEffect(() => {
     if (bridge) {

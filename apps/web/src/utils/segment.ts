@@ -1,5 +1,6 @@
 import { AnalyticsBrowser } from '@segment/analytics-next';
 import { IUserEntity } from '@novu/shared';
+// eslint-disable-next-line import/no-namespace
 import * as mixpanel from 'mixpanel-browser';
 import { api } from '../api';
 
@@ -29,16 +30,20 @@ export class SegmentService {
             const segmentDeviceId = payload.obj.anonymousId;
             mixpanel.register({ $device_id: segmentDeviceId });
             const sessionReplayProperties = mixpanel.get_session_recording_properties();
+            // eslint-disable-next-line no-param-reassign
             payload.obj.properties = {
               ...payload.obj.properties,
               ...sessionReplayProperties,
             };
           }
-          const userId = payload.obj.userId;
+          const { userId } = payload.obj;
           if (payload.type() === 'identify' && userId) {
             mixpanel.identify(userId);
           }
-        } catch (e) {}
+        } catch (e) {
+          // eslint-disable-next-line no-console
+          console.error(e);
+        }
         next(payload);
       });
     }
@@ -49,7 +54,34 @@ export class SegmentService {
       return;
     }
 
-    this._segment?.identify(user?._id);
+    this._segment?.identify(user?._id, {
+      email: user.email,
+      name: `${user.firstName} ${user.lastName}`,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      avatar: user.profilePicture,
+      createdAt: user.createdAt,
+    });
+  }
+
+  alias(anonymousId: string, userId: string) {
+    if (!this.isSegmentEnabled()) {
+      return;
+    }
+
+    if (this._mixpanelEnabled) {
+      mixpanel.alias(userId, anonymousId);
+    }
+
+    this._segment?.alias(userId, anonymousId);
+  }
+
+  setAnonymousId(anonymousId: string) {
+    if (!this.isSegmentEnabled() || !anonymousId) {
+      return;
+    }
+
+    this._segment?.setAnonymousId(anonymousId);
   }
 
   async track(event: string, data?: Record<string, unknown>) {
@@ -58,10 +90,9 @@ export class SegmentService {
     }
 
     if (this._mixpanelEnabled) {
-      const segmentDeviceId = localStorage.getItem('ajs_anonymous_id');
-      mixpanel.register({ $device_id: segmentDeviceId });
       const sessionReplayProperties = mixpanel.get_session_recording_properties();
 
+      // eslint-disable-next-line no-param-reassign
       data = {
         ...(data || {}),
         ...sessionReplayProperties,
@@ -69,7 +100,7 @@ export class SegmentService {
     }
 
     await api.post('/v1/telemetry/measure', {
-      event: event + ' - [WEB]',
+      event: `${event} - [WEB]`,
       data,
     });
   }

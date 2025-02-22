@@ -1,16 +1,19 @@
-import {
-  Button as ExternalButton,
-  ButtonProps as ExternalButtonProps,
-  ButtonVariant as ExternalButtonVariant,
-} from '@mantine/core';
+import { Button as ExternalButton, ButtonProps as ExternalButtonProps } from '@mantine/core';
 import React from 'react';
 import { css, cx } from '../../../styled-system/css';
 import { splitCssProps } from '../../../styled-system/jsx';
 import { button, type ButtonVariant } from '../../../styled-system/recipes';
 import { JsxStyleProps } from '../../../styled-system/types';
-import { IconSize, IconType } from '../../icons';
+import { IconType } from '../../icons';
 import { CoreProps, CorePropsWithChildren } from '../../types';
 import { PolymorphicComponentPropWithRef, PolymorphicRef } from '../../types/props-helpers';
+import {
+  BUTTON_SIZE_TO_EXTERNAL_BUTTON_SIZE,
+  BUTTON_SIZE_TO_ICON_SIZE,
+  BUTTON_VARIANT_TO_EXTERNAL_BUTTON_VARIANT,
+  DEFAULT_SIZE,
+  DEFAULT_VARIANT,
+} from './Button.const';
 
 export interface ButtonCoreProps
   extends CorePropsWithChildren,
@@ -20,44 +23,20 @@ export interface ButtonCoreProps
   loading?: boolean;
 }
 
-type IconButtonDefaultElement = 'button';
+type ButtonDefaultElement = 'button';
 
-export type ButtonProps<C extends React.ElementType = IconButtonDefaultElement> = PolymorphicComponentPropWithRef<
+export type ButtonProps<C extends React.ElementType = ButtonDefaultElement> = PolymorphicComponentPropWithRef<
   C,
   JsxStyleProps & Partial<ButtonVariant> & CoreProps & ButtonCoreProps
 >;
 
-const DEFAULT_VARIANT: ButtonVariant['variant'] = 'filled';
-const DEFAULT_SIZE: ButtonVariant['size'] = 'md';
-
-type PolymorphicComponent = <C extends React.ElementType = IconButtonDefaultElement>(
+type PolymorphicComponent = <C extends React.ElementType = ButtonDefaultElement>(
   props: ButtonProps<C>
 ) => JSX.Element | null;
 
-const BUTTON_SIZE_TO_ICON_SIZE: Record<ButtonVariant['size'], IconSize> = {
-  xs: '16',
-  sm: '20',
-  md: '20',
-  lg: '20',
-};
-
-// Note: for right now, these are equivalent, but we haven't agreed on our size tokens (caps, one letter, etc)
-const BUTTON_SIZE_TO_EXTERNAL_BUTTON_SIZE: Record<ButtonVariant['size'], ExternalButtonProps['size']> = {
-  xs: 'xs',
-  sm: 'sm',
-  md: 'md',
-  lg: 'lg',
-};
-
-// Note: for right now, these are identical, but we may adjust them later
-const BUTTON_VARIANT_TO_EXTERNAL_BUTTON_VARIANT: Record<ButtonVariant['variant'], ExternalButtonVariant> = {
-  filled: 'filled',
-  outline: 'outline',
-  transparent: 'transparent',
-};
-
+// @ts-expect-error
 export const Button: PolymorphicComponent = React.forwardRef(
-  <C extends React.ElementType = IconButtonDefaultElement>(
+  <C extends React.ElementType = ButtonDefaultElement>(
     { variant = DEFAULT_VARIANT, size = DEFAULT_SIZE, ...props }: ButtonProps<C>,
     ref?: PolymorphicRef<C>
   ) => {
@@ -79,6 +58,7 @@ export const Button: PolymorphicComponent = React.forwardRef(
         }
         classNames={styles}
         className={cx(css(cssProps), className)}
+        fullWidth={Boolean(variantProps.fullWidth)}
         {...otherProps}
       >
         {children}

@@ -1,9 +1,10 @@
 import Redis, { RedisOptions, ScanStream } from 'ioredis';
+import newrelic from 'newrelic';
 import { ConnectionOptions } from 'tls';
 
-export { Redis, RedisOptions, ScanStream };
-
 import { convertStringValues } from './variable-mappers';
+
+export { Redis, RedisOptions, ScanStream };
 
 export const CLIENT_READY = 'ready';
 const DEFAULT_TTL_SECONDS = 60 * 60 * 2;
@@ -58,19 +59,13 @@ export const getRedisProviderConfig = (): IRedisProviderConfig => {
   const db = redisConfig.db ? Number(redisConfig.db) : undefined;
   const port = redisConfig.port ? Number(redisConfig.port) : DEFAULT_PORT;
   const host = redisConfig.host || DEFAULT_HOST;
-  const password = redisConfig.password;
-  const connectTimeout = redisConfig.connectTimeout
-    ? Number(redisConfig.connectTimeout)
-    : DEFAULT_CONNECT_TIMEOUT;
-  const family = redisConfig.family
-    ? Number(redisConfig.family)
-    : DEFAULT_FAMILY;
-  const keepAlive = redisConfig.keepAlive
-    ? Number(redisConfig.keepAlive)
-    : DEFAULT_KEEP_ALIVE;
+  const { password } = redisConfig;
+  const connectTimeout = redisConfig.connectTimeout ? Number(redisConfig.connectTimeout) : DEFAULT_CONNECT_TIMEOUT;
+  const family = redisConfig.family ? Number(redisConfig.family) : DEFAULT_FAMILY;
+  const keepAlive = redisConfig.keepAlive ? Number(redisConfig.keepAlive) : DEFAULT_KEEP_ALIVE;
   const keyPrefix = redisConfig.keyPrefix ?? DEFAULT_KEY_PREFIX;
   const ttl = redisConfig.ttl ? Number(redisConfig.ttl) : DEFAULT_TTL_SECONDS;
-  const tls = redisConfig.tls;
+  const { tls } = redisConfig;
 
   return {
     db,
@@ -99,7 +94,15 @@ export const getRedisInstance = (): Redis | undefined => {
   };
 
   if (port && host) {
-    return new Redis(port, host, options);
+    const redisInstance = new Redis(port, host, options);
+    const isNewRelicEnabled = typeof newrelic !== 'undefined' && newrelic.instrumentDatastore;
+    const isNewRelicEnvSet = process.env.NEW_RELIC_LICENSE_KEY && process.env.NEW_RELIC_APP_NAME;
+
+    if (isNewRelicEnabled && isNewRelicEnvSet) {
+      newrelic.instrumentDatastore('Redis', () => redisInstance);
+    }
+
+    return redisInstance;
   }
 
   return undefined;
@@ -111,5 +114,4 @@ export const validateRedisProviderConfig = (): boolean => {
   return !!config.host && !!config.port;
 };
 
-export const isClientReady = (status: string): boolean =>
-  status === CLIENT_READY;
+export const isClientReady = (status: string): boolean => status === CLIENT_READY;

@@ -1,9 +1,9 @@
 import { css } from '@novu/novui/css';
-import { COMPANY_LOGO_TEXT_PATH, COMPANY_LOGO_TEXT_PATH_DARK_TEXT } from '../../../constants/assets';
 import { Stepper } from '@mantine/core';
 import { IconCheck } from '@novu/novui/icons';
 import { VStack } from '@novu/novui/jsx';
 import { useColorScheme } from '@novu/design-system';
+import { COMPANY_LOGO_TEXT_PATH, COMPANY_LOGO_TEXT_PATH_DARK_TEXT } from '../../../constants/assets';
 
 export const Header = ({ activeStepIndex = 0 }: { activeStepIndex?: number }) => {
   const { colorScheme } = useColorScheme();
@@ -73,8 +73,8 @@ export const Header = ({ activeStepIndex = 0 }: { activeStepIndex?: number }) =>
             }}
             active={activeStepIndex}
           >
-            <Stepper.Step label="Add the endpoint"></Stepper.Step>
-            <Stepper.Step label="Test the workflow"></Stepper.Step>
+            <Stepper.Step label="Create Novu app"></Stepper.Step>
+            <Stepper.Step label="Test workflow"></Stepper.Step>
             <Stepper.Step label="Check your Inbox"></Stepper.Step>
           </Stepper>
         </div>

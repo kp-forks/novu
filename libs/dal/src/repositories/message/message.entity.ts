@@ -1,5 +1,5 @@
 import { Exclude } from 'class-transformer';
-import { ChannelTypeEnum, IMessageCTA, IActor } from '@novu/shared';
+import { ChannelTypeEnum, IActor, IMessageCTA } from '@novu/shared';
 
 import { IEmailBlock } from '../message-template';
 import { SubscriberEntity } from '../subscriber';
@@ -34,8 +34,6 @@ export class MessageEntity {
   templateIdentifier: string;
 
   createdAt: string;
-
-  expireAt: string;
 
   updatedAt: string;
 
@@ -90,6 +88,8 @@ export class MessageEntity {
 
   payload: Record<string, unknown>;
 
+  data?: Record<string, unknown>;
+
   overrides: Record<string, unknown>;
 
   identifier?: string;
@@ -99,6 +99,8 @@ export class MessageEntity {
   _actorId?: string;
 
   tags?: string[];
+
+  avatar?: string;
 }
 
 export type MessageDBModel = ChangePropsValueType<

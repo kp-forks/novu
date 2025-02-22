@@ -9,9 +9,9 @@ import {
 } from '@novu/dal';
 import {
   DigestTypeEnum,
-  NotificationTemplateTypeEnum,
   STEP_TYPE_TO_CHANNEL_TYPE,
   StepTypeEnum,
+  isBridgeWorkflow,
 } from '@novu/shared';
 
 import {
@@ -32,12 +32,12 @@ export class CreateNotificationJobs {
     private digestFilterSteps: DigestFilterSteps,
     private notificationRepository: NotificationRepository,
     @Inject(forwardRef(() => ComputeJobWaitDurationService))
-    private computeJobWaitDurationService: ComputeJobWaitDurationService
+    private computeJobWaitDurationService: ComputeJobWaitDurationService,
   ) {}
 
   @InstrumentUsecase()
   public async execute(
-    command: CreateNotificationJobsCommand
+    command: CreateNotificationJobsCommand,
   ): Promise<NotificationJob[]> {
     const activeSteps = this.filterActiveSteps(command.template.steps);
 
@@ -60,9 +60,9 @@ export class CreateNotificationJobs {
       transactionId: command.transactionId,
       to: command.to,
       payload: command.payload,
-      expireAt: this.calculateExpireAt(command),
       channels,
-      bridge: command.bridge,
+      controls: command.controls,
+      tags: command.template.tags,
     });
 
     if (!notification) {
@@ -93,9 +93,7 @@ export class CreateNotificationJobs {
         tenant: command.tenant,
         step: {
           ...step,
-          ...(command.bridge?.workflow
-            ? { bridgeUrl: command.bridge?.url }
-            : {}),
+          ...(command.bridgeUrl ? { bridgeUrl: command.bridgeUrl } : {}),
         },
         transactionId: command.transactionId,
         _notificationId: notification._id,
@@ -108,12 +106,12 @@ export class CreateNotificationJobs {
         _templateId: notification._templateId,
         digest: step.metadata,
         type: step.template.type,
-        providerId: providerId,
-        expireAt: notification.expireAt,
+        providerId,
         ...(command.actor && {
           _actorId: command.actor?._id,
           actorId: command.actor?.subscriberId,
         }),
+        preferences: command.preferences,
       };
 
       jobs.push(job);
@@ -126,12 +124,12 @@ export class CreateNotificationJobs {
     steps: NotificationStepEntity[],
     command: CreateNotificationJobsCommand,
     notification: NotificationEntity,
-    jobs: NotificationJob[]
+    jobs: NotificationJob[],
   ): NotificationJob[] {
     const normalizedJobs = [...jobs];
 
     const triggerStepExist = steps.some(
-      (step) => step.template.type === StepTypeEnum.TRIGGER
+      (step) => step.template.type === StepTypeEnum.TRIGGER,
     );
 
     if (triggerStepExist) {
@@ -144,6 +142,7 @@ export class CreateNotificationJobs {
       overrides: command.overrides,
       tenant: command.tenant,
       step: {
+        bridgeUrl: command.bridgeUrl,
         template: {
           _environmentId: command.environmentId,
           _organizationId: command.organizationId,
@@ -164,7 +163,6 @@ export class CreateNotificationJobs {
       subscriberId: command.subscriber.subscriberId,
       transactionId: command.transactionId,
       status: JobStatusEnum.PENDING,
-      expireAt: notification.expireAt,
       ...(command.actor && {
         _actorId: command.actor?._id,
         actorId: command.actor?.subscriberId,
@@ -179,13 +177,13 @@ export class CreateNotificationJobs {
   private async createSteps(
     command: CreateNotificationJobsCommand,
     activeSteps: NotificationStepEntity[],
-    notification: NotificationEntity
+    notification: NotificationEntity,
   ): Promise<NotificationStepEntity[]> {
     return await this.filterDigestSteps(command, notification, activeSteps);
   }
 
   private filterActiveSteps(
-    steps: NotificationStepEntity[]
+    steps: NotificationStepEntity[],
   ): NotificationStepEntity[] {
     return steps.filter((step) => step.active === true);
   }
@@ -193,11 +191,11 @@ export class CreateNotificationJobs {
   private async filterDigestSteps(
     command: CreateNotificationJobsCommand,
     notification: NotificationEntity,
-    steps: NotificationStepEntity[]
+    steps: NotificationStepEntity[],
   ): Promise<NotificationStepEntity[]> {
     // TODO: Review this for workflows with more than one digest as this will return the first element found
     const digestStep = steps.find(
-      (step) => step.template?.type === StepTypeEnum.DIGEST
+      (step) => step.template?.type === StepTypeEnum.DIGEST,
     );
 
     if (digestStep?.metadata?.type) {
@@ -217,46 +215,10 @@ export class CreateNotificationJobs {
             'backoff' in digestStep.metadata
               ? digestStep.metadata.backoff
               : undefined,
-        })
+        }),
       );
     }
 
     return steps;
-  }
-
-  private calculateExpireAt(command: CreateNotificationJobsCommand) {
-    try {
-      /*
-       * If the workflow is a framework workflow, we'll set the expiration date to 1 month from now
-       * todo decide if we want to add another request in order to get more accurate expire at amount
-       */
-      if (command.template.type === NotificationTemplateTypeEnum.ECHO) {
-        return addMonths(Date.now(), 1);
-      }
-
-      const delayedSteps = command.template.steps.filter(
-        (step) =>
-          step.template?.type === StepTypeEnum.DIGEST ||
-          step.template?.type === StepTypeEnum.DELAY
-      );
-
-      const delay = delayedSteps
-        .map((step) =>
-          this.computeJobWaitDurationService.calculateDelay({
-            stepMetadata: step.metadata,
-            payload: command.payload,
-            overrides: command.overrides,
-          })
-        )
-        .reduce((sum, delayAmount) => sum + delayAmount, 0);
-
-      return addMilliseconds(Date.now(), delay);
-    } catch (e) {
-      /*
-       * If the user has entered an incorrect negative delay,
-       * we'll accept it as a temporary solution to enable printing error execution details later in the process when a job is available.
-       */
-      return addMonths(Date.now(), 1);
-    }
   }
 }

@@ -1,11 +1,12 @@
 import { act, waitFor } from '@testing-library/react';
 import { renderHook } from '@testing-library/react-hooks';
 import { MemoryRouter, useSearchParams } from 'react-router-dom';
+// eslint-disable-next-line import/no-namespace
 import * as ReactRouterDOM from 'react-router-dom';
 import { afterEach, expect, it, vi } from 'vitest';
 
-import { IUsePaginationQueryParamsStateOptions, usePaginationQueryParamsState } from './usePaginationQueryParamsState';
 import { PropsWithChildren } from 'react';
+import { IUsePaginationQueryParamsStateOptions, usePaginationQueryParamsState } from './usePaginationQueryParamsState';
 
 const initialPageNumber = 1;
 const pageSizes = [10, 20, 30];

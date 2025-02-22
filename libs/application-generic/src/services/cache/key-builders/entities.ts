@@ -7,10 +7,10 @@ import {
   ServiceConfigIdentifierEnum,
 } from './identifiers';
 import {
-  buildEnvironmentScopedKeyById,
   buildEnvironmentScopedKey,
-  buildOrganizationScopedKeyById,
+  buildEnvironmentScopedKeyById,
   buildOrganizationScopedKey,
+  buildOrganizationScopedKeyById,
   buildServiceConfigKey,
 } from './builder.scoped';
 import { buildUnscopedKey } from './builder.base';
@@ -25,6 +25,20 @@ export const buildSubscriberKey = ({
   buildEnvironmentScopedKeyById({
     type: CacheKeyTypeEnum.ENTITY,
     keyEntity: CacheKeyPrefixEnum.SUBSCRIBER,
+    environmentId: _environmentId,
+    identifierPrefix: IdentifierPrefixEnum.SUBSCRIBER_ID,
+    identifier: subscriberId,
+  });
+export const buildDedupSubscriberKey = ({
+  subscriberId,
+  _environmentId,
+}: {
+  subscriberId: string;
+  _environmentId: string;
+}): string =>
+  buildEnvironmentScopedKeyById({
+    type: CacheKeyTypeEnum.ENTITY,
+    keyEntity: CacheKeyPrefixEnum.SUBSCRIBER_DEDUP,
     environmentId: _environmentId,
     identifierPrefix: IdentifierPrefixEnum.SUBSCRIBER_ID,
     identifier: subscriberId,
@@ -186,5 +200,20 @@ export const buildSubscriptionKey = ({
 
 export const buildServiceConfigApiRateLimitMaximumKey = (): string =>
   buildServiceConfigKey(
-    ServiceConfigIdentifierEnum.API_RATE_LIMIT_SERVICE_MAXIMUM
+    ServiceConfigIdentifierEnum.API_RATE_LIMIT_SERVICE_MAXIMUM,
   );
+
+export const buildSubscriberTopicsKey = ({
+  subscriberId,
+  _environmentId,
+}: {
+  subscriberId: string;
+  _environmentId: string;
+}): string =>
+  buildEnvironmentScopedKeyById({
+    type: CacheKeyTypeEnum.ENTITY,
+    keyEntity: CacheKeyPrefixEnum.SUBSCRIBER_TOPICS,
+    environmentId: _environmentId,
+    identifierPrefix: IdentifierPrefixEnum.SUBSCRIBER_ID,
+    identifier: subscriberId,
+  });

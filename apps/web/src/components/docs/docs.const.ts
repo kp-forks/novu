@@ -1,21 +1,15 @@
-import { ROUTES } from '../../constants/routes';
+export const PATHS: Record<string, string> = {
+  INTEGRATION_INTRODUCTION: 'integrations/providers/introduction',
+  QUICK_START_NEXTJS: 'quickstart/nextjs',
+  WORKFLOW_INTRODUCTION: 'framework/overview',
+  CONCEPT_CONTROLS: 'concepts/controls',
+  CONCEPT_ENDPOINT: 'concepts/endpoint',
+  CONCEPT_WORKFLOWS: 'concepts/workflows',
+  CONCEPT_TENANTS: 'concepts/tenants',
+  CONCEPT_SUBSCRIBERS: 'concepts/subscribers',
+} as const;
 
-export const PATHS: { [key in ROUTES]?: string } = {
-  [ROUTES.ACTIVITIES]: 'activity-feed/introduction',
-  [ROUTES.LAYOUT]: 'content-creation-design/layouts',
-  [ROUTES.CHANGES]: 'platform/environments',
-  [ROUTES.INTEGRATIONS]: 'channels-and-providers/integration-store',
-  [ROUTES.SUBSCRIBERS]: 'subscribers/subscribers',
-  [ROUTES.WORKFLOWS]: 'workflows/notification-workflows',
-  [ROUTES.TENANTS]: 'tenants/introduction',
-  [ROUTES.TRANSLATIONS]: 'content-creation-design/translations',
-  [ROUTES.STUDIO_ONBOARDING]: 'framework/quickstart',
-  [ROUTES.STUDIO_ONBOARDING_PREVIEW]: 'framework/concepts/workflows',
-  [ROUTES.STUDIO_FLOWS]: 'framework/concepts/workflows',
-  [ROUTES.STUDIO_FLOWS_VIEW]: 'framework/concepts/workflows',
-  [ROUTES.STUDIO_FLOWS_STEP_EDITOR]: 'framework/concepts/workflows',
-  [ROUTES.STUDIO_FLOWS_TEST]: 'framework/concepts/workflows',
-};
+export type DocsPathsEnum = (typeof PATHS)[keyof typeof PATHS];
 
 export const DOCS_URL = 'https://docs.novu.co';
 

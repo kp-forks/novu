@@ -1,7 +1,7 @@
 import { forwardRef, Inject, Injectable } from '@nestjs/common';
 
 import { JobRepository, JobStatusEnum } from '@novu/dal';
-import { DelayTypeEnum, ExecutionDetailsSourceEnum, ExecutionDetailsStatusEnum, StepTypeEnum } from '@novu/shared';
+import { ExecutionDetailsSourceEnum, ExecutionDetailsStatusEnum, StepTypeEnum } from '@novu/shared';
 import {
   ApiException,
   ComputeJobWaitDurationService,
@@ -39,7 +39,7 @@ export class AddDelayJob {
 
     try {
       delay = this.computeJobWaitDurationService.calculateDelay({
-        stepMetadata: data.step.bridgeUrl ? data.digest : data.step.metadata,
+        stepMetadata: data.step.metadata,
         payload: data.payload,
         overrides: data.overrides,
       });

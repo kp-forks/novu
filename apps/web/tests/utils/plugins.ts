@@ -1,12 +1,13 @@
-// eslint-disable-next-line no-restricted-imports
-import { DalService, IntegrationRepository, NotificationGroupRepository, NotificationTemplateEntity } from '@novu/dal';
 import {
-  ChannelTypeEnum,
-  getGetStartedTemplateIds,
-  getPopularTemplateIds,
-  MemberStatusEnum,
-  ProvidersIdEnum,
-} from '@novu/shared';
+  DalService,
+  IntegrationRepository,
+  NotificationGroupRepository,
+  NotificationTemplateEntity,
+  EnvironmentEntity,
+  OrganizationEntity,
+  UserEntity,
+} from '@novu/dal';
+import { ChannelTypeEnum, getPopularTemplateIds, MemberStatusEnum, ProvidersIdEnum } from '@novu/shared';
 import {
   CreateTemplatePayload,
   EnvironmentService,
@@ -18,7 +19,6 @@ import {
   UserService,
   UserSession,
 } from '@novu/testing';
-import { EnvironmentEntity, OrganizationEntity, UserEntity } from '@novu/dal/src';
 import { Page } from '@playwright/test';
 
 export interface SessionData {
@@ -130,21 +130,21 @@ export async function createNotifications({
   }
 
   const triggerIdentifier = identifier;
-  const service = new NotificationsService(token);
+  const service = new NotificationsService(token, environmentId);
   const session = new UserSession(process.env.REACT_APP_API_URL);
 
-  // eslint-disable-next-line no-plusplus
-  for (let i = 0; i < count; i++) {
+  for (let i = 0; i < count; i += 1) {
     await service.triggerEvent(triggerIdentifier, subId, {});
   }
 
   if (organizationId) {
-    await session.awaitRunningJobs(templateId, undefined, 0, organizationId);
+    await session.waitForJobCompletion(templateId, undefined, 0, organizationId);
   }
 
   while ((await jobsService.standardQueue.getWaitingCount()) || (await jobsService.standardQueue.getActiveCount())) {
-    // eslint-disable-next-line @typescript-eslint/no-loop-func
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await new Promise((resolve) => {
+      setTimeout(resolve, 50);
+    });
   }
 
   return 'ok';
@@ -224,6 +224,7 @@ export async function inviteUser(
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${session.token}`,
+      'Novu-Environment-Id': session.environment._id,
     },
     body: JSON.stringify({
       email,
@@ -239,6 +240,7 @@ export async function inviteUser(
     method: 'GET',
     headers: {
       Authorization: `Bearer ${session.token}`,
+      'Novu-Environment-Id': session.environment._id,
     },
   });
 

@@ -1,4 +1,4 @@
-import { IsDefined, IsString, IsOptional } from 'class-validator';
+import { IsDefined, IsOptional, IsString } from 'class-validator';
 // TODO: We shouldn't be importing from DAL here. Needs big refactor throughout monorepo.
 import { NotificationTemplateEntity, SubscriberEntity } from '@novu/dal';
 import {
@@ -6,6 +6,8 @@ import {
   ISubscribersDefine,
   ITenantDefine,
   ProvidersIdEnum,
+  StatelessControls,
+  WorkflowPreferences,
 } from '@novu/shared';
 
 import { EnvironmentWithUserCommand } from '../../commands';
@@ -43,5 +45,9 @@ export class CreateNotificationJobsCommand extends EnvironmentWithUserCommand {
   @IsOptional()
   tenant?: ITenantDefine;
 
-  bridge?: any;
+  bridgeUrl?: string;
+
+  controls?: StatelessControls;
+
+  preferences?: WorkflowPreferences;
 }

@@ -1,4 +1,3 @@
-const nr = require('newrelic');
 import { forwardRef, Inject, Injectable, Logger } from '@nestjs/common';
 
 import { ObservabilityBackgroundTransactionEnum } from '@novu/shared';
@@ -15,6 +14,7 @@ import {
   WorkflowInMemoryProviderService,
 } from '@novu/application-generic';
 
+import { CommunityOrganizationRepository, CommunityUserRepository } from '@novu/dal';
 import {
   RunJob,
   RunJobCommand,
@@ -26,6 +26,8 @@ import {
   HandleLastFailedJobCommand,
   HandleLastFailedJob,
 } from '../usecases';
+
+const nr = require('newrelic');
 
 const LOG_CONTEXT = 'StandardWorker';
 
@@ -39,7 +41,8 @@ export class StandardWorker extends StandardWorkerService {
     @Inject(forwardRef(() => WebhookFilterBackoffStrategy))
     private webhookFilterBackoffStrategy: WebhookFilterBackoffStrategy,
     @Inject(forwardRef(() => WorkflowInMemoryProviderService))
-    public workflowInMemoryProviderService: WorkflowInMemoryProviderService
+    public workflowInMemoryProviderService: WorkflowInMemoryProviderService,
+    private organizationRepository: CommunityOrganizationRepository
   ) {
     super(new BullMqService(workflowInMemoryProviderService));
 
@@ -71,14 +74,14 @@ export class StandardWorker extends StandardWorkerService {
       const message = data.payload?.message;
 
       if (!message) {
-        throw new Error('Job data is missing required fields' + JSON.stringify(data));
+        throw new Error(`Job data is missing required fields${JSON.stringify(data)}`);
       }
 
       return {
         environmentId: message._environmentId,
         jobId: message._jobId,
         organizationId: message._organizationId,
-        userId: userId,
+        userId,
       };
     }
 
@@ -93,17 +96,26 @@ export class StandardWorker extends StandardWorkerService {
   private getWorkerProcessor() {
     return async ({ data }: { data: IStandardDataDto }) => {
       const minimalJobData = this.extractMinimalJobData(data);
+      const organizationExists = await this.organizationExist(data);
+
+      if (!organizationExists) {
+        Logger.log(
+          `Organization not found for organizationId ${minimalJobData.organizationId}. Skipping job.`,
+          LOG_CONTEXT
+        );
+
+        return;
+      }
 
       Logger.verbose(`Job ${minimalJobData.jobId} is being processed in the new instance standard worker`, LOG_CONTEXT);
 
-      return await new Promise(async (resolve, reject) => {
-        // eslint-disable-next-line @typescript-eslint/no-this-alias
+      return await new Promise((resolve, reject) => {
         const _this = this;
 
         nr.startBackgroundTransaction(
           ObservabilityBackgroundTransactionEnum.JOB_PROCESSING_QUEUE,
           'Trigger Engine',
-          function () {
+          function processTask() {
             const transaction = nr.getTransaction();
 
             storage.run(new Store(PinoLogger.root), () => {
@@ -135,8 +147,8 @@ export class StandardWorker extends StandardWorkerService {
     try {
       const minimalData = this.extractMinimalJobData(job.data);
       jobId = minimalData.jobId;
-      const environmentId = minimalData.environmentId;
-      const userId = minimalData.userId;
+      const { environmentId } = minimalData;
+      const { userId } = minimalData;
 
       await this.setJobAsCompleted.execute(
         SetJobAsCommand.create({
@@ -169,12 +181,12 @@ export class StandardWorker extends StandardWorkerService {
       }
 
       if (shouldHandleLastFailedJob) {
-        const handleLastFailedJobCommand = HandleLastFailedJobCommand.create({
-          ...minimalData,
-          error,
-        });
-
-        await this.handleLastFailedJob.execute(handleLastFailedJobCommand);
+        await this.handleLastFailedJob.execute(
+          HandleLastFailedJobCommand.create({
+            ...minimalData,
+            error,
+          })
+        );
       }
     } catch (anotherError) {
       Logger.error(anotherError, `Failed to set job ${jobId} as failed`, LOG_CONTEXT);
@@ -183,16 +195,22 @@ export class StandardWorker extends StandardWorkerService {
 
   private getBackoffStrategies = () => {
     return async (attemptsMade: number, type: string, eventError: Error, eventJob: Job): Promise<number> => {
-      const command = {
+      return await this.webhookFilterBackoffStrategy.execute({
         attemptsMade,
         environmentId: eventJob?.data?._environmentId,
         eventError,
         eventJob,
         organizationId: eventJob?.data?._organizationId,
         userId: eventJob?.data?._userId,
-      };
-
-      return await this.webhookFilterBackoffStrategy.execute(command);
+      });
     };
   };
+
+  private async organizationExist(data: IStandardDataDto): Promise<boolean> {
+    const { _organizationId } = data;
+
+    const organization = await this.organizationRepository.findOne({ _id: _organizationId });
+
+    return !!organization;
+  }
 }

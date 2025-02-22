@@ -1,16 +1,18 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
-import * as inlineCss from 'inline-css';
-import * as Sentry from '@sentry/node';
+import inlineCss from 'inline-css';
+import { addBreadcrumb } from '@sentry/node';
 
 import {
   MessageRepository,
-  NotificationStepEntity,
   SubscriberRepository,
   EnvironmentRepository,
   IntegrationEntity,
   MessageEntity,
   LayoutRepository,
+  EnvironmentEntity,
+  OrganizationEntity,
+  UserEntity,
 } from '@novu/dal';
 import {
   ChannelTypeEnum,
@@ -19,7 +21,7 @@ import {
   ExecutionDetailsStatusEnum,
   IAttachmentOptions,
   IEmailOptions,
-  LogCodeEnum,
+  FeatureFlagsKeysEnum,
 } from '@novu/shared';
 import {
   InstrumentUsecase,
@@ -32,10 +34,10 @@ import {
   SelectVariant,
   ExecutionLogRoute,
   ExecutionLogRouteCommand,
+  FeatureFlagsService,
 } from '@novu/application-generic';
-import { EmailOutput } from '@novu/framework';
+import { EmailOutput } from '@novu/framework/internal';
 
-import { CreateLog } from '../../../shared/logs';
 import { SendMessageCommand } from './send-message.command';
 import { SendMessageBase } from './send-message.base';
 import { PlatformException } from '../../../shared/utils';
@@ -51,17 +53,16 @@ export class SendMessageEmail extends SendMessageBase {
     protected subscriberRepository: SubscriberRepository,
     protected messageRepository: MessageRepository,
     protected layoutRepository: LayoutRepository,
-    protected createLogUsecase: CreateLog,
     protected executionLogRoute: ExecutionLogRoute,
     private compileEmailTemplateUsecase: CompileEmailTemplate,
     protected selectIntegration: SelectIntegration,
     protected getNovuProviderCredentials: GetNovuProviderCredentials,
     protected selectVariant: SelectVariant,
-    protected moduleRef: ModuleRef
+    protected moduleRef: ModuleRef,
+    private featureFlagService: FeatureFlagsService
   ) {
     super(
       messageRepository,
-      createLogUsecase,
       executionLogRoute,
       subscriberRepository,
       selectIntegration,
@@ -73,7 +74,7 @@ export class SendMessageEmail extends SendMessageBase {
 
   @InstrumentUsecase()
   public async execute(command: SendMessageCommand) {
-    let integration: IntegrationEntity | undefined = undefined;
+    let integration: IntegrationEntity | undefined;
 
     const overrideSelectedIntegration = command.overrides?.email?.integrationIdentifier;
     try {
@@ -103,15 +104,15 @@ export class SendMessageEmail extends SendMessageBase {
       return;
     }
 
-    const step: NotificationStepEntity = command.step;
+    const { step } = command;
 
     if (!step) throw new PlatformException('Email channel step not found');
     if (!step.template) throw new PlatformException('Email channel template not found');
 
     const { subscriber } = command.compileContext;
-    const email = command.payload.email || subscriber.email;
+    const email = command.overrides?.email?.toRecipient || subscriber.email;
 
-    Sentry.addBreadcrumb({
+    addBreadcrumb({
       message: 'Sending Email',
     });
 
@@ -147,11 +148,10 @@ export class SendMessageEmail extends SendMessageBase {
       step.template = template;
     }
 
-    const overrides: Record<string, any> = Object.assign(
-      {},
-      command.overrides.email || {},
-      command.overrides[integration?.providerId] || {}
-    );
+    const overrides: Record<string, any> = {
+      ...(command.overrides?.email || {}),
+      ...(command.overrides?.[integration?.providerId] || {}),
+    };
     const bridgeOutputs = command.bridgeData?.outputs;
 
     let html;
@@ -169,7 +169,7 @@ export class SendMessageEmail extends SendMessageBase {
       payload: this.getCompilePayload(command.compileContext),
     };
 
-    const messagePayload = Object.assign({}, command.payload);
+    const messagePayload = { ...command.payload };
     delete messagePayload.attachments;
 
     const message: MessageEntity = await this.messageRepository.create({
@@ -205,6 +205,12 @@ export class SendMessageEmail extends SendMessageBase {
     }
 
     try {
+      const i18nInstance = await this.initiateTranslations(
+        command.environmentId,
+        command.organizationId,
+        subscriber.locale
+      );
+
       if (!command.bridgeData) {
         ({ html, content, subject, senderName } = await this.compileEmailTemplateUsecase.execute(
           CompileEmailTemplateCommand.create({
@@ -213,7 +219,7 @@ export class SendMessageEmail extends SendMessageBase {
             userId: command.userId,
             ...payload,
           }),
-          this.initiateTranslations.bind(this)
+          i18nInstance
         ));
 
         if (this.storeContent()) {
@@ -231,14 +237,30 @@ export class SendMessageEmail extends SendMessageBase {
           );
         }
 
-        html = await inlineCss(html, {
-          // Used for style sheet links that starts with / so should not be needed in our case.
-          url: ' ',
+        // TODO: remove as part of https://linear.app/novu/issue/NV-4117/email-html-content-issue-in-mobile-devices
+        const shouldDisableInlineCss = await this.featureFlagService.getFlag({
+          key: FeatureFlagsKeysEnum.IS_EMAIL_INLINE_CSS_DISABLED,
+          defaultValue: false,
+          environment: { _id: command.environmentId } as EnvironmentEntity,
+          organization: { _id: command.organizationId } as OrganizationEntity,
+          user: { _id: command.userId } as UserEntity,
         });
+
+        if (!shouldDisableInlineCss) {
+          // this is causing rendering issues in Gmail (especially when media queries are used), so we are disabling it
+          html = await inlineCss(html, {
+            // Used for style sheet links that starts with / so should not be needed in our case.
+            url: ' ',
+          });
+        }
       }
-    } catch (e) {
-      Logger.error({ payload, e }, 'Compiling the email template or storing it or inlining it has failed', LOG_CONTEXT);
-      await this.sendErrorHandlebars(command.job, e.message);
+    } catch (error) {
+      Logger.error(
+        { payload, error },
+        'Compiling the email template or storing it or inlining it has failed',
+        LOG_CONTEXT
+      );
+      await this.sendErrorHandlebars(command.job, error.message);
 
       return;
     }
@@ -269,7 +291,7 @@ export class SendMessageEmail extends SendMessageBase {
     const mailData: IEmailOptions = createMailData(
       {
         to: email,
-        subject: subject,
+        subject,
         html: (bridgeOutputs as EmailOutput)?.body || html,
         from: integration?.credentials.from || 'no-reply@novu.co',
         attachments,
@@ -306,7 +328,7 @@ export class SendMessageEmail extends SendMessageBase {
       await this.executionLogRoute.execute(
         ExecutionLogRouteCommand.create({
           ...ExecutionLogRouteCommand.getDetailsFromJob(command.job),
-          messageId: messageId,
+          messageId,
           detail: DetailEnum.REPLY_CALLBACK_MISSING_REPLAY_CALLBACK_URL,
           source: ExecutionDetailsSourceEnum.INTERNAL,
           status: ExecutionDetailsStatusEnum.WARNING,
@@ -327,16 +349,17 @@ export class SendMessageEmail extends SendMessageBase {
       return getReplyToAddress(command.transactionId, environment._id, environment?.dns?.inboundParseDomain);
     } else {
       const detailEnum =
+        // eslint-disable-next-line no-nested-ternary
         !environment.dns?.mxRecordConfigured && !environment.dns?.inboundParseDomain
           ? DetailEnum.REPLY_CALLBACK_NOT_CONFIGURATION
           : !environment.dns?.mxRecordConfigured
-          ? DetailEnum.REPLY_CALLBACK_MISSING_MX_RECORD_CONFIGURATION
-          : DetailEnum.REPLY_CALLBACK_MISSING_MX_ROUTE_DOMAIN_CONFIGURATION;
+            ? DetailEnum.REPLY_CALLBACK_MISSING_MX_RECORD_CONFIGURATION
+            : DetailEnum.REPLY_CALLBACK_MISSING_MX_ROUTE_DOMAIN_CONFIGURATION;
 
       await this.executionLogRoute.execute(
         ExecutionLogRouteCommand.create({
           ...ExecutionLogRouteCommand.getDetailsFromJob(command.job),
-          messageId: messageId,
+          messageId,
           detail: detailEnum,
           source: ExecutionDetailsSourceEnum.INTERNAL,
           status: ExecutionDetailsStatusEnum.WARNING,
@@ -357,14 +380,7 @@ export class SendMessageEmail extends SendMessageBase {
     if (!email) {
       const mailErrorMessage = `${errorMessage} email address`;
 
-      await this.sendErrorStatus(
-        message,
-        status,
-        errorId,
-        mailErrorMessage,
-        command,
-        LogCodeEnum.SUBSCRIBER_MISSING_EMAIL
-      );
+      await this.sendErrorStatus(message, status, errorId, mailErrorMessage, command);
 
       await this.executionLogRoute.execute(
         ExecutionLogRouteCommand.create({
@@ -384,14 +400,7 @@ export class SendMessageEmail extends SendMessageBase {
     if (!integration) {
       const integrationError = `${errorMessage} active email integration not found`;
 
-      await this.sendErrorStatus(
-        message,
-        status,
-        errorId,
-        integrationError,
-        command,
-        LogCodeEnum.MISSING_EMAIL_INTEGRATION
-      );
+      await this.sendErrorStatus(message, status, errorId, integrationError, command);
 
       await this.executionLogRoute.execute(
         ExecutionLogRouteCommand.create({
@@ -404,8 +413,6 @@ export class SendMessageEmail extends SendMessageBase {
           isRetry: false,
         })
       );
-
-      return;
     }
   }
 
@@ -417,9 +424,10 @@ export class SendMessageEmail extends SendMessageBase {
   ) {
     const mailFactory = new MailFactory();
     const mailHandler = mailFactory.getHandler(this.buildFactoryIntegration(integration), mailData.from);
+    const bridgeProviderData = command.bridgeData?.providers?.[integration.providerId] || {};
 
     try {
-      const result = await mailHandler.send(mailData);
+      const result = await mailHandler.send({ ...mailData, bridgeProviderData });
 
       Logger.verbose({ command }, 'Email message has been sent', LOG_CONTEXT);
 
@@ -457,7 +465,7 @@ export class SendMessageEmail extends SendMessageBase {
         'mail_unexpected_error',
         error.message || error.name || 'Error while sending email with provider',
         command,
-        LogCodeEnum.MAIL_PROVIDER_DELIVERY_ERROR
+        error
       );
 
       /*
@@ -465,6 +473,7 @@ export class SendMessageEmail extends SendMessageBase {
        * TODO: Handle this at the handler level globally
        */
       if (error?.isAxiosError && error.response) {
+        // eslint-disable-next-line no-ex-assign
         error = error.response;
       }
 
@@ -480,8 +489,6 @@ export class SendMessageEmail extends SendMessageBase {
           raw: JSON.stringify(error) === '{}' ? JSON.stringify({ message: error.message }) : JSON.stringify(error),
         })
       );
-
-      return;
     }
   }
 

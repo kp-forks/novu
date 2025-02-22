@@ -1,13 +1,13 @@
 import { forwardRef, Inject, Injectable } from '@nestjs/common';
-import { JobEntity, JobRepository, IDelayOrDigestJobResult, NotificationRepository } from '@novu/dal';
+import { IDelayOrDigestJobResult, JobEntity, JobRepository, NotificationRepository } from '@novu/dal';
 import {
+  DigestCreationResultEnum,
   ExecutionDetailsSourceEnum,
   ExecutionDetailsStatusEnum,
   IDigestBaseMetadata,
   IDigestRegularMetadata,
-  JobStatusEnum,
-  DigestCreationResultEnum,
   IDigestTimedMetadata,
+  JobStatusEnum,
 } from '@novu/shared';
 import {
   ApiException,
@@ -47,7 +47,7 @@ export class MergeOrCreateDigest {
 
     const digestMeta = job.digest as IDigestBaseMetadata;
     const digestKey = digestMeta?.digestKey;
-    const digestValue = getNestedValue(job.payload, digestKey);
+    const digestValue = digestMeta?.digestValue ?? getNestedValue(job.payload, digestKey);
 
     const digestAction = command.filtered
       ? { digestResult: DigestCreationResultEnum.SKIPPED }
@@ -85,7 +85,7 @@ export class MergeOrCreateDigest {
     const regularDigestMeta = digestMeta as IDigestRegularMetadata | undefined;
     if (!regularDigestMeta?.amount || !regularDigestMeta?.unit) {
       const err = new Error();
-      const stack = err.stack;
+      const { stack } = err;
       throw new ApiException(`Somehow ${job._id} had wrong digest settings and escaped validation`);
     }
 
@@ -121,7 +121,6 @@ export class MergeOrCreateDigest {
         {
           $set: {
             _digestedNotificationId: activeNotificationId,
-            expireAt: job.expireAt,
           },
         }
       ),
@@ -151,9 +150,13 @@ export class MergeOrCreateDigest {
   }
 
   private getLockKey(job: JobEntity, digestKey: string | undefined, digestValue: string | number | undefined): string {
-    let resource = `environment:${job._environmentId}:template:${job._templateId}:subscriber:${job._subscriberId}`;
+    const resource = `environment:${job._environmentId}:template:${job._templateId}:subscriber:${job._subscriberId}`;
     if (digestKey && digestValue) {
-      resource = `${resource}:digestKey:${digestKey}:digestValue:${digestValue}`;
+      return `${resource}:digestKey:${digestKey}:digestValue:${digestValue}`;
+    }
+
+    if (digestValue) {
+      return `${resource}:digestValue:${digestValue}`;
     }
 
     return resource;

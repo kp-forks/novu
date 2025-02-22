@@ -17,7 +17,7 @@ export interface IUserResetTokenCount {
   reqInDay: number;
 }
 
-export class UserEntity {
+export class UserEntity implements IUserEntity {
   _id: UserId;
 
   resetToken?: string;
@@ -50,9 +50,11 @@ export class UserEntity {
     lastFailedAttempt: string;
   };
 
-  servicesHashes?: { intercom?: string };
+  servicesHashes?: { intercom?: string; plain?: string };
 
   jobTitle?: JobTitleEnum;
+
+  hasPassword: boolean;
 
   externalId?: string;
 }

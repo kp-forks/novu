@@ -20,8 +20,8 @@ export class GetNotifications {
   @CachedQuery({
     builder: ({ environmentId, subscriberId, ...command }: GetNotificationsCommand) =>
       buildFeedKey().cache({
-        environmentId: environmentId,
-        subscriberId: subscriberId,
+        environmentId,
+        subscriberId,
         ...command,
       }),
   })
@@ -34,6 +34,10 @@ export class GetNotifications {
 
     if (!subscriber) {
       throw new ApiException(`Subscriber with id: ${command.subscriberId} is not found.`);
+    }
+
+    if (command.read === false && command.archived === true) {
+      throw new ApiException('Filtering for unread and archived notifications is not supported.');
     }
 
     const { data: feed, hasMore } = await this.messageRepository.paginate(

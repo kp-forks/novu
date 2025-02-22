@@ -1,82 +1,68 @@
-import { Injectable, UnprocessableEntityException, Logger } from '@nestjs/common';
-import * as Sentry from '@sentry/node';
-import * as hat from 'hat';
+import { Injectable, Logger, UnprocessableEntityException } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
+import { addBreadcrumb } from '@sentry/node';
+import { randomBytes } from 'crypto';
 import { merge } from 'lodash';
 import { v4 as uuidv4 } from 'uuid';
-import { ModuleRef } from '@nestjs/core';
 
 import {
   buildNotificationTemplateIdentifierKey,
-  buildHasNotificationKey,
   CachedEntity,
+  ExecuteBridgeRequest,
+  ExecuteBridgeRequestCommand,
+  ExecuteBridgeRequestDto,
   Instrument,
   InstrumentUsecase,
   IWorkflowDataDto,
   StorageHelperService,
   WorkflowQueueService,
-  AnalyticsService,
-  GetFeatureFlag,
-  GetFeatureFlagCommand,
-  InvalidateCacheService,
-  requireInject,
-  IUseCaseInterface,
-  IDoBridgeRequestCommand,
 } from '@novu/application-generic';
 import {
-  FeatureFlagsKeysEnum,
-  INVITE_TEAM_MEMBER_NUDGE_PAYLOAD_KEY,
+  EnvironmentEntity,
+  EnvironmentRepository,
+  NotificationTemplateEntity,
+  NotificationTemplateRepository,
+  TenantEntity,
+  TenantRepository,
+  WorkflowOverrideEntity,
+  WorkflowOverrideRepository,
+} from '@novu/dal';
+import { DiscoverWorkflowOutput, GetActionEnum } from '@novu/framework/internal';
+import {
   ReservedVariablesMap,
   TriggerContextTypeEnum,
   TriggerEventStatusEnum,
+  TriggerRecipients,
+  TriggerRecipientsPayload,
+  TriggerRecipientSubscriber,
+  WorkflowOriginEnum,
+  SUBSCRIBER_ID_REGEX,
+  TriggerRecipient,
 } from '@novu/shared';
-import {
-  WorkflowOverrideRepository,
-  TenantEntity,
-  WorkflowOverrideEntity,
-  NotificationTemplateRepository,
-  NotificationTemplateEntity,
-  TenantRepository,
-  NotificationRepository,
-  UserRepository,
-  MemberRepository,
-  EnvironmentRepository,
-  EnvironmentEntity,
-} from '@novu/dal';
-import { Novu } from '@novu/node';
-import { DiscoverOutput, DiscoverWorkflowOutput } from '@novu/framework';
 
+import { ApiException } from '../../../shared/exceptions/api.exception';
+import { VerifyPayload, VerifyPayloadCommand } from '../verify-payload';
 import {
   ParseEventRequestBroadcastCommand,
   ParseEventRequestCommand,
   ParseEventRequestMulticastCommand,
 } from './parse-event-request.command';
-import { ApiException } from '../../../shared/exceptions/api.exception';
-import { VerifyPayload, VerifyPayloadCommand } from '../verify-payload';
 
 const LOG_CONTEXT = 'ParseEventRequest';
 
 @Injectable()
 export class ParseEventRequest {
-  private doBridgeRequest: IUseCaseInterface<IDoBridgeRequestCommand, DiscoverOutput | null>;
-
   constructor(
     private notificationTemplateRepository: NotificationTemplateRepository,
-    private notificationRepository: NotificationRepository,
     private environmentRepository: EnvironmentRepository,
-    private userRepository: UserRepository,
-    private memberRepository: MemberRepository,
     private verifyPayload: VerifyPayload,
     private storageHelperService: StorageHelperService,
     private workflowQueueService: WorkflowQueueService,
     private tenantRepository: TenantRepository,
     private workflowOverrideRepository: WorkflowOverrideRepository,
-    private analyticsService: AnalyticsService,
-    private getFeatureFlag: GetFeatureFlag,
-    private invalidateCacheService: InvalidateCacheService,
+    private executeBridgeRequest: ExecuteBridgeRequest,
     protected moduleRef: ModuleRef
-  ) {
-    this.doBridgeRequest = requireInject('do_bridge_request', this.moduleRef);
-  }
+  ) {}
 
   @InstrumentUsecase()
   public async execute(command: ParseEventRequestCommand) {
@@ -87,8 +73,8 @@ export class ParseEventRequest {
       command.bridgeUrl
     );
 
-    if (statelessWorkflowAllowed && environment) {
-      const discoveredWorkflow = await this.queryDiscoverWorkflow(command, environment);
+    if (environment && statelessWorkflowAllowed) {
+      const discoveredWorkflow = await this.queryDiscoverWorkflow(command);
 
       if (!discoveredWorkflow) {
         throw new UnprocessableEntityException('workflow_not_found');
@@ -161,7 +147,7 @@ export class ParseEventRequest {
       };
     }
 
-    Sentry.addBreadcrumb({
+    addBreadcrumb({
       message: 'Sending trigger',
       data: {
         triggerIdentifier: command.identifier,
@@ -172,6 +158,7 @@ export class ParseEventRequest {
     if (command.payload && Array.isArray(command.payload.attachments)) {
       this.modifyAttachments(command);
       await this.storageHelperService.uploadAttachments(command.payload.attachments);
+      // eslint-disable-next-line no-param-reassign
       command.payload.attachments = command.payload.attachments.map(({ file, ...attachment }) => attachment);
     }
 
@@ -181,30 +168,27 @@ export class ParseEventRequest {
         template,
       })
     );
+    // eslint-disable-next-line no-param-reassign
     command.payload = merge({}, defaultPayload, command.payload);
 
-    await this.sendInAppNudgeForTeamMemberInvite(command);
+    const result = await this.dispatchEvent(command, transactionId);
 
-    return await this.dispatchEvent(command, transactionId);
+    return result;
   }
 
-  private async queryDiscoverWorkflow(
-    command: ParseEventRequestCommand,
-    environment: EnvironmentEntity
-  ): Promise<DiscoverWorkflowOutput | null> {
+  private async queryDiscoverWorkflow(command: ParseEventRequestCommand): Promise<DiscoverWorkflowOutput | null> {
     if (!command.bridgeUrl) {
       return null;
     }
 
-    const discover = await this.doBridgeRequest.execute({
-      bridgeUrl: command.bridgeUrl,
-      apiKey: environment.apiKeys[0].key,
-      action: 'discover',
-    });
-
-    if (!discover) {
-      return null;
-    }
+    const discover = (await this.executeBridgeRequest.execute(
+      ExecuteBridgeRequestCommand.create({
+        statelessBridgeUrl: command.bridgeUrl,
+        environmentId: command.environmentId,
+        action: GetActionEnum.DISCOVER,
+        workflowOrigin: WorkflowOriginEnum.EXTERNAL,
+      })
+    )) as ExecuteBridgeRequestDto<GetActionEnum.DISCOVER>;
 
     return discover?.workflows?.find((findWorkflow) => findWorkflow.workflowId === command.identifier) || null;
   }
@@ -214,8 +198,12 @@ export class ParseEventRequest {
     transactionId,
     discoveredWorkflow?: DiscoverWorkflowOutput | null
   ) {
-    const jobData: IWorkflowDataDto = {
+    const commandArgs = {
       ...command,
+    };
+
+    const jobData: IWorkflowDataDto = {
+      ...commandArgs,
       actor: command.actor,
       transactionId,
       bridgeWorkflow: discoveredWorkflow ?? undefined,
@@ -244,9 +232,7 @@ export class ParseEventRequest {
       throw new UnprocessableEntityException('Environment not found');
     }
 
-    const statelessWorkflowAllowed = environment.name !== 'Production';
-
-    return { environment, statelessWorkflowAllowed };
+    return { environment, statelessWorkflowAllowed: true };
   }
 
   @Instrument()
@@ -296,125 +282,62 @@ export class ParseEventRequest {
   }
 
   private modifyAttachments(command: ParseEventRequestCommand): void {
-    command.payload.attachments = command.payload.attachments.map((attachment) => ({
-      ...attachment,
-      name: attachment.name,
-      file: Buffer.from(attachment.file, 'base64'),
-      storagePath: `${command.organizationId}/${command.environmentId}/${hat()}/${attachment.name}`,
-    }));
+    // eslint-disable-next-line no-param-reassign
+    command.payload.attachments = command.payload.attachments.map((attachment) => {
+      const randomId = randomBytes(16).toString('hex');
+
+      return {
+        ...attachment,
+        name: attachment.name,
+        file: Buffer.from(attachment.file, 'base64'),
+        storagePath: `${command.organizationId}/${command.environmentId}/${randomId}/${attachment.name}`,
+      };
+    });
   }
 
   private getReservedVariablesTypes(template: NotificationTemplateEntity): TriggerContextTypeEnum[] {
-    const reservedVariables = template.triggers[0].reservedVariables;
+    const { reservedVariables } = template.triggers[0];
 
     return reservedVariables?.map((reservedVariable) => reservedVariable.type) || [];
   }
 
-  @Instrument()
-  @CachedEntity({
-    builder: (command: ParseEventRequestCommand) =>
-      buildHasNotificationKey({
-        _organizationId: command.organizationId,
-      }),
-  })
-  private async getNotificationCount(command: ParseEventRequestCommand): Promise<number> {
-    return await this.notificationRepository.count(
-      {
-        _organizationId: command.organizationId,
-      },
-      1
-    );
-  }
-
-  @Instrument()
-  private async sendInAppNudgeForTeamMemberInvite(command: ParseEventRequestCommand): Promise<void> {
-    try {
-      const isEnabled = await this.getFeatureFlag.execute(
-        GetFeatureFlagCommand.create({
-          key: FeatureFlagsKeysEnum.IS_TEAM_MEMBER_INVITE_NUDGE_ENABLED,
-          organizationId: command.organizationId,
-          userId: 'system',
-          environmentId: 'system',
-        })
-      );
-
-      if (!isEnabled) return;
-
-      // check if this is first trigger
-      const notificationCount = await this.getNotificationCount(command);
-
-      if (notificationCount > 0) return;
-
-      /*
-       * After the first trigger, we invalidate the cache to ensure the next event trigger
-       * will update the cache with a count of 1.
-       */
-      this.invalidateCacheService.invalidateByKey({
-        key: buildHasNotificationKey({
-          _organizationId: command.organizationId,
-        }),
-      });
-
-      // check if user is using personal email
-      const user = await this.userRepository.findOne({
-        _id: command.userId,
-      });
-
-      if (!user) throw new ApiException('User not found');
-
-      if (this.isBlockedEmail(user.email)) return;
-
-      // check if organization has more than 1 member
-      const membersCount = await this.memberRepository.count(
-        {
-          _organizationId: command.organizationId,
-        },
-        2
-      );
-
-      if (membersCount > 1) return;
-
-      Logger.log('No notification found', LOG_CONTEXT);
-
-      if (process.env.NOVU_API_KEY) {
-        if (!command.payload[INVITE_TEAM_MEMBER_NUDGE_PAYLOAD_KEY]) {
-          const novu = new Novu(process.env.NOVU_API_KEY);
-
-          await novu.trigger(process.env.NOVU_INVITE_TEAM_MEMBER_NUDGE_TRIGGER_IDENTIFIER, {
-            to: {
-              subscriberId: command.userId,
-              email: user?.email as string,
-            },
-            payload: {
-              [INVITE_TEAM_MEMBER_NUDGE_PAYLOAD_KEY]: true,
-              webhookUrl: `${process.env.API_ROOT_URL}/v1/invites/webhook`,
-              organizationId: command.organizationId,
-            },
-          });
-
-          this.analyticsService.track('Invite Nudge Sent', command.userId, {
-            _organization: command.organizationId,
-          });
-        }
-      }
-    } catch (error) {
-      Logger.error(error, 'Invite nudge failed', LOG_CONTEXT);
+  private isValidId(subscriberId: string) {
+    if (subscriberId.trim().match(SUBSCRIBER_ID_REGEX)) {
+      return subscriberId.trim();
     }
   }
 
-  private isBlockedEmail(email: string): boolean {
-    return BLOCKED_DOMAINS.some((domain) => email.includes(domain));
+  private removeInvalidRecipients(payload: TriggerRecipientsPayload): TriggerRecipientsPayload | null {
+    if (!payload) return null;
+
+    if (!Array.isArray(payload)) {
+      return this.filterValidRecipient(payload) as TriggerRecipientsPayload;
+    }
+
+    const filteredRecipients: TriggerRecipients = payload
+      .map((subscriber) => this.filterValidRecipient(subscriber))
+      .filter((subscriber): subscriber is TriggerRecipient => subscriber !== null);
+
+    return filteredRecipients.length > 0 ? filteredRecipients : null;
+  }
+
+  private filterValidRecipient(subscriber: TriggerRecipient): TriggerRecipient | null {
+    if (typeof subscriber === 'string') {
+      return this.isValidId(subscriber) ? subscriber : null;
+    }
+
+    if (typeof subscriber === 'object' && subscriber !== null) {
+      if ('topicKey' in subscriber) {
+        return subscriber;
+      }
+
+      if ('subscriberId' in subscriber) {
+        const subscriberId = this.isValidId(subscriber.subscriberId);
+
+        return subscriberId ? { ...subscriber, subscriberId } : null;
+      }
+    }
+
+    return null;
   }
 }
-
-const BLOCKED_DOMAINS = [
-  '@gmail',
-  '@outlook',
-  '@yahoo',
-  '@icloud',
-  '@mail',
-  '@hotmail',
-  '@protonmail',
-  '@gmx',
-  '@novu',
-];

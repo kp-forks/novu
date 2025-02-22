@@ -6,7 +6,6 @@ import {
   IsString,
   ValidateNested,
 } from 'class-validator';
-import { JSONSchema7 } from 'json-schema';
 
 import {
   StepTypeEnum,
@@ -16,6 +15,7 @@ import {
   IActor,
   MessageTemplateContentType,
   WorkflowTypeEnum,
+  JSONSchemaDto,
 } from '@novu/shared';
 
 import { EnvironmentWithUserCommand } from '../../../commands';
@@ -73,17 +73,13 @@ export class CreateMessageTemplateCommand extends EnvironmentWithUserCommand {
   _creatorId?: string;
 
   @IsOptional()
-  inputs?: {
-    schema: JSONSchema7;
-  };
-  @IsOptional()
   controls?: {
-    schema: JSONSchema7;
+    schema: JSONSchemaDto;
   };
 
   @IsOptional()
   output?: {
-    schema: JSONSchema7;
+    schema: JSONSchemaDto;
   };
 
   @IsOptional()

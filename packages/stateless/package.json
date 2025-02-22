@@ -1,10 +1,18 @@
 {
   "name": "@novu/stateless",
-  "version": "0.24.2",
+  "version": "2.6.5",
   "description": "Notification Management Framework",
-  "main": "build/main/index.js",
-  "typings": "build/main/index.d.ts",
-  "module": "build/module/index.js",
+  "main": "dist/cjs/index.js",
+  "module": "dist/esm/index.js",
+  "types": "dist/cjs/index.d.ts",
+  "files": [
+    "dist/",
+    "!**/*.spec.*",
+    "!**/*.json",
+    "CHANGELOG.md",
+    "LICENSE",
+    "README.md"
+  ],
   "repository": "https://github.com/novuhq/novu",
   "license": "MIT",
   "keywords": [],
@@ -13,14 +21,14 @@
     "start": "npm run start:dev",
     "start:dev": "npm run watch:build",
     "prebuild": "rimraf build",
-    "build": "run-p build:*",
-    "build:main": "tsc -p tsconfig.json",
-    "build:module": "tsc -p tsconfig.module.json",
+    "build": "npm run build:cjs && npm run build:esm",
+    "build:cjs": "tsc -p tsconfig.json",
+    "build:esm": "tsc -p tsconfig.esm.json",
     "fix": "run-s fix:*",
     "fix:prettier": "prettier \"src/**/*.ts\" --write",
-    "fix:lint": "eslint src --ext .ts --fix",
+    "lint:fix": "eslint src --fix",
     "test": "run-s test:*",
-    "lint": "eslint src --ext .ts",
+    "lint": "eslint src",
     "test:prettier": "prettier \"src/**/*.ts\"",
     "test:unit": "jest src",
     "check-cli": "run-s test diff-integration-tests check-integration-tests",
@@ -50,7 +58,7 @@
     "@types/jest": "29.5.2",
     "@types/lodash.get": "^4.4.6",
     "@types/lodash.merge": "^4.6.6",
-    "@types/node": "^14.6.0",
+    "@types/node": "^20.15.0",
     "codecov": "^3.5.0",
     "jest": "^27.0.6",
     "npm-run-all": "^4.1.5",
@@ -59,18 +67,14 @@
     "run-p": "0.0.0",
     "ts-jest": "^27.0.5",
     "typedoc": "^0.24.0",
-    "typescript": "4.9.5"
+    "typescript": "5.6.2"
   },
-  "files": [
-    "build/main",
-    "build/module",
-    "!**/*.spec.*",
-    "!**/*.json",
-    "CHANGELOG.md",
-    "LICENSE",
-    "README.md"
-  ],
   "prettier": {
     "singleQuote": true
+  },
+  "nx": {
+    "tags": [
+      "type:package"
+    ]
   }
 }

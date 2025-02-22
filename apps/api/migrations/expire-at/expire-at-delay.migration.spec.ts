@@ -34,7 +34,7 @@ describe('Create expireAt - TTL support - with pending jobs', function () {
       expireAt: { $exists: false },
     };
 
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 5; i += 1) {
       const newSubscriberIdInAppNotification = SubscriberRepository.createObjectId();
       await sendTrigger(session, digestTemplate, newSubscriberIdInAppNotification);
       await sendTrigger(session, delayTemplate, newSubscriberIdInAppNotification);
@@ -74,7 +74,7 @@ describe('Create expireAt - TTL support - with pending jobs', function () {
   });
 
   it('should add expireAt to pending events that were digested', async function () {
-    await session.awaitRunningJobs(digestTemplate?._id, false, 5);
+    await session.waitForJobCompletion(digestTemplate?._id, false, 5);
 
     await notificationExpireAt(query);
 

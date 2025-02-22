@@ -1,20 +1,20 @@
 import { Close, colors, Text, Warning, Button } from '@novu/design-system';
-import { useMantineTheme } from '@mantine/core';
+import { useMantineTheme, Group } from '@mantine/core';
 import styled from '@emotion/styled';
 import { useLocalStorage } from '@mantine/hooks';
-import { Group } from '@mantine/core';
 import { useNavigate } from 'react-router-dom';
-import { useSubscription } from '../utils/hooks/useSubscription';
 import React, { useState, useMemo } from 'react';
-import { WARNING_LIMIT_DAYS, COLOR_WARNING, pluralizeDaysLeft } from '../utils/freeTrial.constants';
-import { ContactSalesModal } from './ContactSalesModal';
 import { ApiServiceLevelEnum } from '@novu/shared';
+import { useSubscription } from '../hooks/useSubscription';
+import { COLOR_WARNING, WARNING_LIMIT_DAYS, pluralizeDaysLeft } from '../utils/freeTrial.constants';
+import { ContactSalesModal } from './ContactSalesModal';
 import { capitalize } from '../utils/capitalize';
+import { ROUTES } from '../../../constants/routes';
 
 export function FreeTrialBanner() {
   const { colorScheme } = useMantineTheme();
   const isDark = colorScheme === 'dark';
-  const { isFreeTrialActive, daysLeft, hasPaymentMethod, apiServiceLevel } = useSubscription();
+  const { trial, apiServiceLevel } = useSubscription();
   const [freeTrialDismissed, setFreeTrialDismissed] = useLocalStorage({
     key: 'freeTrialDismissed',
     defaultValue: 'false',
@@ -23,7 +23,7 @@ export function FreeTrialBanner() {
   const plan = useMemo(() => capitalize(apiServiceLevel), [apiServiceLevel]);
   const [isContactSalesModalOpen, setIsContactSalesModalOpen] = useState(false);
 
-  if (freeTrialDismissed === 'true' || !isFreeTrialActive || daysLeft > WARNING_LIMIT_DAYS || hasPaymentMethod) {
+  if (freeTrialDismissed === 'true' || !trial.isActive || trial.daysLeft > WARNING_LIMIT_DAYS) {
     return null;
   }
 
@@ -50,13 +50,14 @@ export function FreeTrialBanner() {
           <Group spacing={8}>
             <Warning color={colors.black} />
             <Text color={colors.black}>
-              Trial period expires in {pluralizeDaysLeft(daysLeft)}. Upgrade for continued access to {plan} features.
+              Trial period expires in {pluralizeDaysLeft(trial.daysLeft)}. Upgrade for continued access to {plan}{' '}
+              features.
             </Text>
           </Group>
           <Group spacing={20}>
             <Button
               onClick={() => {
-                navigate('/settings/billing');
+                navigate(ROUTES.MANAGE_ACCOUNT_BILLING);
               }}
               size="md"
               style={{

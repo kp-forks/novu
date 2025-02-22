@@ -1,10 +1,10 @@
 import { ClassSerializerInterceptor, Controller, Get, Query, UseInterceptors } from '@nestjs/common';
 import { UploadTypesEnum, UserSessionData } from '@novu/shared';
 
+import { ApiExcludeController, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { GetSignedUrl } from './usecases/get-signed-url/get-signed-url.usecase';
 import { GetSignedUrlCommand } from './usecases/get-signed-url/get-signed-url.command';
 import { UserSession } from '../shared/framework/user.decorator';
-import { ApiExcludeController, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { UploadUrlResponse } from './dtos/upload-url-response.dto';
 import { ExternalApiAccessible } from '../auth/framework/external-api.decorator';
 import { ApiCommonResponses, ApiResponse } from '../shared/framework/response.decorator';
@@ -28,7 +28,7 @@ export class StorageController {
   async signedUrl(
     @UserSession() user: UserSessionData,
     @Query('extension') extension: string,
-    @Query('type') type: UploadTypesEnum = UploadTypesEnum.BRANDING
+    @Query('type') type: string
   ): Promise<UploadUrlResponse> {
     return await this.getSignedUrlUsecase.execute(
       GetSignedUrlCommand.create({
@@ -36,7 +36,7 @@ export class StorageController {
         organizationId: user.organizationId,
         userId: user._id,
         extension,
-        type,
+        type: (type as UploadTypesEnum) || UploadTypesEnum.BRANDING,
       })
     );
   }

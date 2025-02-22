@@ -4,6 +4,7 @@ import { SubscriberEntity, SubscriberRepository } from '@novu/dal';
 import {
   InvalidateCacheService,
   buildSubscriberKey,
+  CachedEntity,
 } from '../../services/cache';
 import { subscriberNeedUpdate } from '../../utils/subscriber';
 
@@ -20,18 +21,18 @@ export class UpdateSubscriber {
   constructor(
     private invalidateCache: InvalidateCacheService,
     private subscriberRepository: SubscriberRepository,
-    private updateSubscriberChannel: UpdateSubscriberChannel
+    private updateSubscriberChannel: UpdateSubscriberChannel,
   ) {}
 
   public async execute(
-    command: UpdateSubscriberCommand
+    command: UpdateSubscriberCommand,
   ): Promise<SubscriberEntity> {
     const foundSubscriber = command.subscriber
       ? command.subscriber
-      : await this.subscriberRepository.findBySubscriberId(
-          command.environmentId,
-          command.subscriberId
-        );
+      : await this.fetchSubscriber({
+          subscriberId: command.subscriberId,
+          _environmentId: command.environmentId,
+        });
 
     if (!foundSubscriber) {
       throw new ApiException(`SubscriberId: ${command.subscriberId} not found`);
@@ -91,8 +92,18 @@ export class UpdateSubscriber {
       },
       {
         $set: updatePayload,
-      }
+      },
     );
+
+    // fetch subscriber again as channel credentials are updated
+    if (command.channels?.length) {
+      const updatedSubscriber = await this.fetchSubscriber({
+        subscriberId: command.subscriberId,
+        _environmentId: command.environmentId,
+      });
+
+      return updatedSubscriber;
+    }
 
     return {
       ...foundSubscriber,
@@ -102,7 +113,7 @@ export class UpdateSubscriber {
 
   private async updateSubscriberChannels(
     command: UpdateSubscriberCommand,
-    foundSubscriber: SubscriberEntity
+    foundSubscriber: SubscriberEntity,
   ) {
     for (const channel of command.channels) {
       await this.updateSubscriberChannel.execute(
@@ -116,8 +127,29 @@ export class UpdateSubscriber {
           integrationIdentifier: channel.integrationIdentifier,
           oauthHandler: OAuthHandlerEnum.EXTERNAL,
           isIdempotentOperation: false,
-        })
+        }),
       );
     }
+  }
+
+  @CachedEntity({
+    builder: (command: { subscriberId: string; _environmentId: string }) =>
+      buildSubscriberKey({
+        _environmentId: command._environmentId,
+        subscriberId: command.subscriberId,
+      }),
+  })
+  private async fetchSubscriber({
+    subscriberId,
+    _environmentId,
+  }: {
+    subscriberId: string;
+    _environmentId: string;
+  }): Promise<SubscriberEntity | null> {
+    return await this.subscriberRepository.findBySubscriberId(
+      _environmentId,
+      subscriberId,
+      true,
+    );
   }
 }

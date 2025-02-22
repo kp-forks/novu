@@ -6,8 +6,6 @@ import { useFormContext, useWatch } from 'react-hook-form';
 import styled from '@emotion/styled';
 import { ChannelTypeEnum, MemberStatusEnum } from '@novu/shared';
 
-import { errorMessage, successMessage } from '../../../../utils/notifications';
-import { useAuth } from '../../../../hooks';
 import {
   Button,
   Text,
@@ -20,8 +18,9 @@ import {
   inputStyles,
   useSelectStyles,
 } from '@novu/design-system';
+import { errorMessage, successMessage } from '../../../../utils/notifications';
+import { useAuth, useProcessVariables, useIntegrationLimit } from '../../../../hooks';
 import { getOrganizationMembers } from '../../../../api/organization';
-import { useProcessVariables, useIntegrationLimit } from '../../../../hooks';
 import { testSendEmailMessage } from '../../../../api/notification-templates';
 import { useStepFormPath } from '../../hooks/useStepFormPath';
 import type { IForm } from '../formTypes';
@@ -86,15 +85,15 @@ export function TestSendEmail({
         subject: '',
         ...template,
         payload,
-        inputs: controls,
         controls,
         to: sendTo,
         bridge,
+        // eslint-disable-next-line no-nested-ternary
         content: bridge
           ? ''
           : template.contentType === 'customHtml'
-          ? (template.htmlContent as string)
-          : template.content,
+            ? (template.htmlContent as string)
+            : template.content,
         layoutId: template.layoutId,
       });
       successMessage('Test sent successfully!');
