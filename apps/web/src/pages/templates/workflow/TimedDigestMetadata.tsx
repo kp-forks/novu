@@ -25,12 +25,14 @@ const convertUnitToLabel = (unit: DigestUnitEnum) => {
       return 'week';
     case DigestUnitEnum.MONTHS:
       return 'month';
+    default:
+      throw new Error('Invalid unit');
   }
 };
 
 export const TimedDigestMetadata = () => {
   const { template } = useTemplateEditorForm();
-  const { readonly } = useEnvironment({}, template?.bridge);
+  const { readonly } = useEnvironment({ bridge: template?.bridge });
   const { control, watch, setValue } = useFormContext();
   const stepFormPath = useStepFormPath();
   const unit: DigestUnitEnum =

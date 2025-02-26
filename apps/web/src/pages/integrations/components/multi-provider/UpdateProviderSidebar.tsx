@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Group, Center, Box } from '@mantine/core';
 import styled from '@emotion/styled';
-import slugify from 'slugify';
 import { Controller, FormProvider, useForm, useWatch } from 'react-hook-form';
 import { useClipboard, useDisclosure } from '@mantine/hooks';
 import {
@@ -13,6 +12,7 @@ import {
   ICredentialsDto,
   InAppProviderIdEnum,
   SmsProviderIdEnum,
+  slugify,
 } from '@novu/shared';
 import { Button, colors, Input, Sidebar, Text, Check, Copy } from '@novu/design-system';
 import { useProviders } from '../../useProviders';
@@ -37,6 +37,7 @@ import { ShareableUrl } from '../Modal/ConnectIntegrationForm';
 import { Conditions, IConditions } from '../../../../components/conditions';
 import { useWebhookSupportStatus } from '../../../../api/hooks';
 import { defaultIntegrationConditionsProps } from '../../constants';
+import { NovuInAppRemoveBranding } from '../NovuInAppRemoveBranding';
 
 interface IProviderForm {
   name: string;
@@ -44,6 +45,7 @@ interface IProviderForm {
   active: boolean;
   identifier: string;
   conditions: IConditions[];
+  removeNovuBranding?: boolean;
 }
 
 enum SidebarStateEnum {
@@ -60,7 +62,7 @@ export function UpdateProviderSidebar({
   integrationId?: string;
   onClose: () => void;
 }) {
-  const { isLoading: areEnvironmentsLoading } = useEnvironment();
+  const { isLoaded: isEnvironmentLoaded } = useEnvironment();
   const [sidebarState, setSidebarState] = useState<SidebarStateEnum>(SidebarStateEnum.NORMAL);
   const [framework, setFramework] = useState<FrameworkEnum | null>(null);
   const { providers, isLoading: areProvidersLoading } = useProviders();
@@ -125,10 +127,7 @@ export function UpdateProviderSidebar({
 
   useEffect(() => {
     if (selectedProvider && !selectedProvider?.identifier) {
-      const newIdentifier = slugify(selectedProvider?.displayName, {
-        lower: true,
-        strict: true,
-      });
+      const newIdentifier = slugify(selectedProvider?.displayName);
 
       setValue('identifier', newIdentifier);
     }
@@ -154,6 +153,7 @@ export function UpdateProviderSidebar({
       }, {} as any),
       conditions: foundProvider.conditions,
       active: foundProvider.active,
+      removeNovuBranding: foundProvider.removeNovuBranding,
     });
   }, [reset, integrationId, providers]);
 
@@ -263,7 +263,7 @@ export function UpdateProviderSidebar({
       <FormProvider {...methods}>
         <Sidebar
           isOpened={isSidebarOpened}
-          isLoading={areProvidersLoading || areEnvironmentsLoading}
+          isLoading={areProvidersLoading || !isEnvironmentLoaded}
           onClose={onSidebarClose}
           onSubmit={onSubmit}
           customHeader={
@@ -301,7 +301,7 @@ export function UpdateProviderSidebar({
     <FormProvider {...methods}>
       <Sidebar
         isOpened={isSidebarOpened}
-        isLoading={areProvidersLoading || areEnvironmentsLoading}
+        isLoading={areProvidersLoading || !isEnvironmentLoaded}
         isExpanded={sidebarState === SidebarStateEnum.EXPANDED}
         onSubmit={onSubmit}
         onClose={onSidebarClose}
@@ -366,6 +366,7 @@ export function UpdateProviderSidebar({
               />
             </InputWrapper>
           ))}
+          {isNovuInAppProvider && <NovuInAppRemoveBranding control={control} />}
           {isWebhookEnabled && (
             <InputWrapper>
               <Input

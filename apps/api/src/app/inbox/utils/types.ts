@@ -1,9 +1,4 @@
-import { ActorTypeEnum, ChannelTypeEnum, ButtonTypeEnum } from '@novu/shared';
-
-type Avatar = {
-  type: ActorTypeEnum;
-  data: string | null;
-};
+import type { ChannelTypeEnum, Redirect, IPreferenceChannels, PreferenceLevelEnum } from '@novu/shared';
 
 export type Subscriber = {
   id: string;
@@ -14,9 +9,9 @@ export type Subscriber = {
 };
 
 type Action = {
-  type: ButtonTypeEnum;
   label: string;
-  url?: string;
+  isCompleted: boolean;
+  redirect?: Redirect;
 };
 
 export type InboxNotification = {
@@ -24,21 +19,37 @@ export type InboxNotification = {
   subject?: string;
   body: string;
   to: Subscriber;
-  read?: boolean;
-  archived?: boolean;
+  isRead: boolean;
+  isArchived: boolean;
   createdAt: string;
-  readAt?: string;
-  archivedAt?: string;
-  actor?: Subscriber;
-  avatar?: Avatar;
+  readAt?: string | null;
+  archivedAt?: string | null;
+  avatar?: string;
   primaryAction?: Action;
   secondaryAction?: Action;
   channelType: ChannelTypeEnum;
   tags?: string[];
+  data?: Record<string, unknown>;
+  redirect?: Redirect;
 };
 
 export type NotificationFilter = {
   tags?: string[];
   read?: boolean;
   archived?: boolean;
+};
+
+export type Workflow = {
+  id: string;
+  identifier: string;
+  name: string;
+  critical: boolean;
+  tags?: string[];
+};
+
+export type InboxPreference = {
+  level: PreferenceLevelEnum;
+  enabled: boolean;
+  channels: IPreferenceChannels;
+  workflow?: Workflow;
 };

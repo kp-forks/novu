@@ -3,36 +3,29 @@ import { Mail } from '@novu/design-system';
 import { Title, Text } from '@novu/novui';
 import { css } from '@novu/novui/css';
 import { HStack, VStack } from '@novu/novui/jsx';
-import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { getActivityList } from '../../api/activity';
 import { ExecutionDetailsAccordion } from '../../components/execution-detail/ExecutionDetailsAccordion';
-import { useSegment } from '../../components/providers/SegmentProvider';
 import { When } from '../../components/utils/When';
 import { ROUTES } from '../../constants/routes';
 import { Footer } from './components/Footer';
 import { Header } from './components/Header';
 import { Wrapper } from './components/Wrapper';
-import { novuOnboardedCookie } from '../../utils/cookies';
+import { setNovuOnboardingStepCookie } from '../../utils';
+import { useNotifications, useTelemetry } from '../../hooks/useNovuAPI';
 
 const ONBOARDING_COOKIE_EXPIRY_DAYS = 10 * 365;
 
 export const StudioOnboardingSuccess = () => {
   const [searchParams] = useSearchParams();
-  const segment = useSegment();
+  const track = useTelemetry();
   const navigate = useNavigate();
-  const { data, isLoading } = useQuery<{ data: any[]; hasMore: boolean; pageSize: number }>(
-    ['activitiesList', 0, searchParams.get('transactionId')],
-    () =>
-      getActivityList(0, {
-        transactionId: searchParams.get('transactionId'),
-      }),
-    {
-      refetchOnMount: true,
-      refetchInterval: 500,
-    }
-  );
+  const transactionId = searchParams.get('transactionId') || '';
+  const { data, isLoading } = useNotifications(transactionId, {
+    enabled: !!transactionId,
+    refetchOnMount: true,
+    refetchInterval: 500,
+  });
 
   const item = useMemo(() => {
     if (!data) {
@@ -67,14 +60,9 @@ export const StudioOnboardingSuccess = () => {
   }, [item?.jobs]);
 
   useEffect(() => {
-    segment.track('Test workflow step completed - [Onboarding - Signup]');
+    track('Test workflow step completed - [Onboarding - Signup]');
 
-    // Never expires! Well it does, in 10 years but you will change device or browser by then :)
-    novuOnboardedCookie.set('1', {
-      expires: ONBOARDING_COOKIE_EXPIRY_DAYS,
-      sameSite: 'none',
-      secure: window.location.protocol === 'https',
-    });
+    setNovuOnboardingStepCookie();
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -149,7 +137,7 @@ export const StudioOnboardingSuccess = () => {
       </VStack>
       <Footer
         onClick={() => {
-          segment.track('Workflows page accessed - [Onboarding - Signup]');
+          track('Workflows page accessed - [Onboarding - Signup]');
           navigate(ROUTES.STUDIO_FLOWS);
         }}
         buttonText="Explore workflows"

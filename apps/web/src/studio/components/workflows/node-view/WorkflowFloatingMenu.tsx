@@ -15,67 +15,62 @@ import {
 import { VStack } from '@novu/novui/jsx';
 import { vstack } from '@novu/novui/patterns';
 import { FC, PropsWithChildren } from 'react';
-import { useDocsModal } from '../../../../components/docs/useDocsModal';
 
 type IWorkflowFloatingMenuProps = CoreProps;
 
 export const WorkflowFloatingMenu: FC<IWorkflowFloatingMenuProps> = ({ className }) => {
-  const { Component: DocsModal, setPath, toggle } = useDocsModal();
-
   const handleClick = (pathToSet: string) => () => {
-    setPath('framework/steps/' + pathToSet);
-    toggle();
+    window.open(`https://docs.novu.co/sdks/framework/typescript/steps/${pathToSet}`, '_blank');
   };
 
   return (
     <>
-      <menu className={cx(vstack({ display: 'flex !important', gap: '150', p: '25' }), className)}>
+      <menu className={cx(vstack({ display: 'flex', gap: '150', p: '50' }), className)}>
         <WorkflowFloatingMenuSection title="Actions">
           <WorkflowFloatingMenuButton
             Icon={IconOutlineAutoAwesomeMotion}
-            tooltipLabel="Guide of how to add a Digest step for embedding in code"
+            tooltipLabel="View the Digest step documentation"
             onClick={handleClick('digest')}
           />
           <WorkflowFloatingMenuButton
             Icon={IconOutlineAvTimer}
-            tooltipLabel="Guide of how to add a Delay step for embedding in code"
+            tooltipLabel="View the Delay step documentation"
             onClick={handleClick('delay')}
+          />
+          <WorkflowFloatingMenuButton
+            Icon={IconOutlineBolt}
+            tooltipLabel="View the Custom step documentation"
+            onClick={handleClick('custom')}
           />
         </WorkflowFloatingMenuSection>
         <WorkflowFloatingMenuSection title="Channels">
           <WorkflowFloatingMenuButton
             Icon={IconOutlineNotifications}
-            tooltipLabel="Guide of how to add an In-app step for embedding in code"
-            onClick={handleClick('in-app')}
+            tooltipLabel="View the In-app step documentation"
+            onClick={handleClick('inApp')}
           />
           <WorkflowFloatingMenuButton
             Icon={IconOutlineEmail}
-            tooltipLabel="Guide of how to add an Email step for embedding in code"
+            tooltipLabel="View the Email step documentation"
             onClick={handleClick('email')}
           />
           <WorkflowFloatingMenuButton
             Icon={IconOutlineSms}
-            tooltipLabel="Guide of how to add an SMS step for embedding in code"
+            tooltipLabel="View the SMS step documentation"
             onClick={handleClick('sms')}
           />
           <WorkflowFloatingMenuButton
             Icon={IconOutlineMobileFriendly}
-            tooltipLabel="Guide of how to add a Push step for embedding in code"
+            tooltipLabel="View the Push step documentation"
             onClick={handleClick('push')}
           />
           <WorkflowFloatingMenuButton
             Icon={IconOutlineForum}
-            tooltipLabel="Guide of how to add a Chat step for embedding in code"
+            tooltipLabel="View the Chat step documentation"
             onClick={handleClick('chat')}
-          />
-          <WorkflowFloatingMenuButton
-            Icon={IconOutlineBolt}
-            tooltipLabel="Guide of how to add a Custom step for embedding in code"
-            onClick={handleClick('custom')}
           />
         </WorkflowFloatingMenuSection>
       </menu>
-      <DocsModal />
     </>
   );
 };
@@ -107,13 +102,12 @@ function WorkflowFloatingMenuButton({ Icon, tooltipLabel, onClick }: IWorkflowFl
         onClick={onClick}
         Icon={Icon}
         className={css({
-          padding: '75 !important',
+          padding: '75',
           borderRadius: '100',
           _hover: {
-            // TODO: this doesn't work due to all the !important in novui... need to fix layer styles
-            bg: 'legacy.B30 !important',
+            bg: { base: 'legacy.B80', _dark: 'legacy.B30' },
             '& svg': {
-              color: 'typography.text.main !important',
+              color: 'typography.text.main',
             },
           },
         })}

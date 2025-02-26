@@ -1,15 +1,16 @@
 import { useState } from 'react';
+import { Grid, SegmentedControl, useMantineTheme } from '@mantine/core';
+import { colors } from '@novu/design-system';
+import { useHotkeys } from '@mantine/hooks';
+import { ChannelTypeEnum } from '@novu/shared';
 import { EmailContentCard } from './EmailContentCard';
 import { useAuth } from '../../../../hooks/useAuth';
 import { When } from '../../../../components/utils/When';
 import { EmailPreview } from '../../../../components/workflow/preview';
 import { EditorPreviewSwitch } from '../EditorPreviewSwitch';
-import { Grid, SegmentedControl, useMantineTheme } from '@mantine/core';
 import { TestSendEmail } from './TestSendEmail';
-import { colors } from '@novu/design-system';
 import { MobileIcon } from '../../../../components/workflow/preview/email/PreviewSegment/MobileIcon';
 import { WebIcon } from '../../../../components/workflow/preview/email/PreviewSegment/WebIcon';
-import { useHotkeys } from '@mantine/hooks';
 import { VariablesManagement } from './variables-management/VariablesManagement';
 import {
   useHasActiveIntegrations,
@@ -20,7 +21,6 @@ import {
 } from '../../../../hooks';
 import { EditVariablesModal } from '../EditVariablesModal';
 import { StepSettings } from '../../workflow/SideBar/StepSettings';
-import { ChannelTypeEnum } from '@novu/shared';
 import { LackIntegrationAlert } from '../LackIntegrationAlert';
 import { useStepFormPath } from '../../hooks/useStepFormPath';
 import { useTemplateEditorForm } from '../TemplateEditorFormProvider';
@@ -37,7 +37,7 @@ const templateFields = ['content', 'htmlContent', 'subject', 'preheader', 'sende
 export function EmailMessagesCards() {
   const { currentOrganization } = useAuth();
   const { template } = useTemplateEditorForm();
-  const { environment, bridge } = useEnvironment({}, template?.bridge);
+  const { environment, bridge } = useEnvironment({ bridge: template?.bridge });
   const [view, setView] = useState<ViewEnum>(bridge ? ViewEnum.PREVIEW : ViewEnum.EDIT);
   const [preview, setPreview] = useState<'mobile' | 'web'>('web');
   const theme = useMantineTheme();
@@ -156,7 +156,7 @@ export function EmailMessagesCards() {
       <When truthy={view === ViewEnum.EDIT}>
         <Grid grow>
           <Grid.Col span={9}>
-            {/* eslint-disable-next-line @typescript-eslint/no-non-null-assertion */}
+            {}
             <EmailContentCard organization={currentOrganization!} />
           </Grid.Col>
           <Grid.Col

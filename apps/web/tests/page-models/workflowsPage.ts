@@ -6,8 +6,10 @@ export class WorkflowsPage {
   async getFirstWorkflowEditor(): Promise<WorkflowEditorPage> {
     const workflowsTable = this.getWorkflowsTable();
     await workflowsTable.locator('tbody tr').first().click();
+
     return new WorkflowEditorPage(this.page);
   }
+
   private templateStoreModal: TemplateStoreModal;
 
   constructor(private page: Page) {
@@ -16,23 +18,22 @@ export class WorkflowsPage {
 
   static async goTo(page: Page): Promise<WorkflowsPage> {
     await page.goto('/workflows');
+
     return new WorkflowsPage(page);
   }
   async clickTemplateEditLink(triggerId: string) {
     const locator = await this.templateEditLink(triggerId);
-    await locator.click();
+    await locator?.click();
+
     return new WorkflowEditorPage(this.page);
   }
   async templateEditLink(triggerId: string) {
-    let locators = this.page.getByTestId('template-edit-link');
+    const locators = this.page.getByTestId('template-edit-link');
     await expect(locators.first()).toBeVisible();
-    let count = await locators.count();
-    for (let i = 0; i < count; i++) {
-      let href = await locators.nth(i).getAttribute('href');
-      console.log('triggerId: ' + JSON.stringify(triggerId));
-      console.log('href: ' + href);
-      console.log('locator: ' + JSON.stringify(locators.nth(i)));
-      if (href.includes(triggerId)) {
+    const count = await locators.count();
+    for (let i = 0; i < count; i += 1) {
+      const href = await locators.nth(i).getAttribute('href');
+      if (href?.includes(triggerId)) {
         return locators.nth(i);
       }
     }

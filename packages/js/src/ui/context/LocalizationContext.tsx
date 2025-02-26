@@ -1,15 +1,36 @@
-import { ParentProps, createContext, createMemo, useContext } from 'solid-js';
-import { defaultLocalization } from '../config/default-localization';
-import { Path } from '../helpers/types';
+import { Accessor, createContext, createMemo, ParentProps, useContext } from 'solid-js';
+import { defaultLocalization, dynamicLocalization } from '../config/defaultLocalization';
+
+export type LocalizationKey = keyof typeof defaultLocalization;
+
+export type StringLocalizationKey = {
+  [K in LocalizationKey]: (typeof defaultLocalization)[K] extends string ? K : never;
+}[LocalizationKey];
 
 export type Localization = {
-  'inbox.title': string;
+  [K in LocalizationKey]?: (typeof defaultLocalization)[K] extends (...args: infer P) => any
+    ? ((...args: P) => ReturnType<(typeof defaultLocalization)[K]>) | string
+    : string;
+} & {
+  dynamic?: Record<string, string>;
 };
 
-type LocalizationPath = Path<Localization>;
+export type TranslateFunctionArg<K extends LocalizationKey> = K extends keyof typeof defaultLocalization
+  ? (typeof defaultLocalization)[K] extends (arg: infer A) => any
+    ? A
+    : undefined
+  : undefined;
+
+export type TranslateFunction = <K extends LocalizationKey>(
+  key: K,
+  ...args: TranslateFunctionArg<K> extends undefined
+    ? [undefined?] // No arguments needed if TranslateFunctionArg<K> is undefined
+    : [TranslateFunctionArg<K>] // A single argument is required if TranslateFunctionArg<K> is defined
+) => string;
 
 type LocalizationContextType = {
-  t: (key: LocalizationPath) => string;
+  t: TranslateFunction;
+  locale: Accessor<string>;
 };
 
 const LocalizationContext = createContext<LocalizationContextType | undefined>(undefined);
@@ -17,18 +38,33 @@ const LocalizationContext = createContext<LocalizationContextType | undefined>(u
 type LocalizationProviderProps = ParentProps & { localization?: Localization };
 
 export const LocalizationProvider = (props: LocalizationProviderProps) => {
-  const localization = createMemo(() => ({ ...defaultLocalization, ...(props.localization || {}) }));
+  const localization = createMemo<Record<string, string | Function>>(() => {
+    const { dynamic, ...localizationObject } = props.localization || {};
 
-  const t = (key: LocalizationPath) => {
+    return {
+      ...defaultLocalization,
+      ...dynamicLocalization(),
+      ...(dynamic || {}),
+      ...localizationObject,
+    };
+  });
+
+  const t: LocalizationContextType['t'] = (key, ...args) => {
     const value = localization()[key];
+    if (typeof value === 'function') {
+      return value(args[0]);
+    }
 
-    return value;
+    return value as string;
   };
+
+  const locale = createMemo(() => localization().locale as string);
 
   return (
     <LocalizationContext.Provider
       value={{
         t,
+        locale,
       }}
     >
       {props.children}

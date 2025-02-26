@@ -1,52 +1,72 @@
 import { NovuEventEmitter } from './event-emitter';
 import type { EventHandler, EventNames, Events } from './event-emitter';
-import { Feeds } from './feeds';
+import { Notifications } from './notifications';
 import { Session } from './session';
 import { Preferences } from './preferences';
-import { ApiServiceSingleton } from './utils/api-service-singleton';
 import { Socket } from './ws';
-import { PRODUCTION_BACKEND_URL } from './utils/config';
-import { InboxServiceSingleton } from './utils/inbox-service-singleton';
+import type { NovuOptions } from './types';
+import { InboxService } from './api';
 
-export type NovuOptions = {
-  applicationIdentifier: string;
-  subscriberId: string;
-  subscriberHash?: string;
-  backendUrl?: string;
-  socketUrl?: string;
-};
-
-export class Novu implements Pick<NovuEventEmitter, 'on' | 'off'> {
+export class Novu implements Pick<NovuEventEmitter, 'on'> {
   #emitter: NovuEventEmitter;
   #session: Session;
   #socket: Socket;
+  #inboxService: InboxService;
 
-  public readonly feeds: Feeds;
+  public readonly notifications: Notifications;
   public readonly preferences: Preferences;
+  public on: <Key extends EventNames>(eventName: Key, listener: EventHandler<Events[Key]>) => () => void;
+  /**
+   * @deprecated
+   * Use the cleanup function returned by the "on" method instead.
+   */
+  public off: <Key extends EventNames>(eventName: Key, listener: EventHandler<Events[Key]>) => void;
 
   constructor(options: NovuOptions) {
-    ApiServiceSingleton.getInstance({ backendUrl: options.backendUrl ?? PRODUCTION_BACKEND_URL });
-    InboxServiceSingleton.getInstance({ backendUrl: options.backendUrl ?? PRODUCTION_BACKEND_URL });
-    this.#emitter = NovuEventEmitter.getInstance({ recreate: true });
-    this.#session = new Session({
-      applicationIdentifier: options.applicationIdentifier,
-      subscriberId: options.subscriberId,
-      subscriberHash: options.subscriberHash,
+    this.#inboxService = new InboxService({
+      apiUrl: options.apiUrl || options.backendUrl,
+      userAgent: options.__userAgent,
     });
+    this.#emitter = new NovuEventEmitter();
+    this.#session = new Session(
+      {
+        applicationIdentifier: options.applicationIdentifier,
+        subscriberId: options.subscriberId,
+        subscriberHash: options.subscriberHash,
+      },
+      this.#inboxService,
+      this.#emitter
+    );
     this.#session.initialize();
-    this.feeds = new Feeds();
-    this.preferences = new Preferences();
-    this.#socket = new Socket({ socketUrl: options.socketUrl });
-  }
+    this.notifications = new Notifications({
+      useCache: options.useCache ?? true,
+      inboxServiceInstance: this.#inboxService,
+      eventEmitterInstance: this.#emitter,
+    });
+    this.preferences = new Preferences({
+      useCache: options.useCache ?? true,
+      inboxServiceInstance: this.#inboxService,
+      eventEmitterInstance: this.#emitter,
+    });
+    this.#socket = new Socket({
+      socketUrl: options.socketUrl,
+      eventEmitterInstance: this.#emitter,
+      inboxServiceInstance: this.#inboxService,
+    });
 
-  on<Key extends EventNames>(eventName: Key, listener: EventHandler<Events[Key]>): void {
-    if (this.#socket.isSocketEvent(eventName)) {
-      this.#socket.initialize();
-    }
-    this.#emitter.on(eventName, listener);
-  }
+    this.on = (eventName, listener) => {
+      if (this.#socket.isSocketEvent(eventName)) {
+        this.#socket.initialize();
+      }
+      const cleanup = this.#emitter.on(eventName, listener);
 
-  off<Key extends EventNames>(eventName: Key, listener: EventHandler<Events[Key]>): void {
-    this.#emitter.off(eventName, listener);
+      return () => {
+        cleanup();
+      };
+    };
+
+    this.off = (eventName, listener) => {
+      this.#emitter.off(eventName, listener);
+    };
   }
 }

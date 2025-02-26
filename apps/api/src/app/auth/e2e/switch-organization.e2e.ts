@@ -1,10 +1,10 @@
-import * as jwt from 'jsonwebtoken';
+import jwt from 'jsonwebtoken';
 import { expect } from 'chai';
 import { OrganizationEntity } from '@novu/dal';
 import { UserSession } from '@novu/testing';
 import { MemberRoleEnum, UserSessionData } from '@novu/shared';
 
-describe('Switch Organization - /auth/organizations/:id/switch (POST)', async () => {
+describe('Switch Organization - /auth/organizations/:id/switch (POST) #novu-v1-os', async () => {
   let session: UserSession;
 
   describe('no organization for user', () => {

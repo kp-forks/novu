@@ -1,15 +1,13 @@
 import { useEffect } from 'react';
-import { Center } from '@novu/novui/jsx';
-import { Loader } from '@mantine/core';
-import { colors } from '@novu/design-system';
-import { css } from '@novu/novui/css';
-import { useAuth, useAPIKeys, useEnvironment } from '../hooks';
+import { useLocation } from 'react-router-dom';
+import { useAuth, useEnvironment } from '../hooks';
 import { ROUTES } from '../constants/routes';
 import { assertProtocol } from '../utils/url';
 import { encodeBase64 } from './utils/base64';
 import { StudioState } from './types';
-import { useLocation } from 'react-router-dom';
 import { novuOnboardedCookie } from '../utils/cookies';
+import { LocalStudioPageLayout } from '../components/layout/components/LocalStudioPageLayout';
+import { getToken } from '../components/providers/AuthProvider';
 
 function buildBridgeURL(origin: string | null, tunnelPath: string) {
   if (!origin) {
@@ -27,14 +25,17 @@ function buildStudioURL(state: StudioState, defaultPath?: string | null) {
 }
 
 export function LocalStudioAuthenticator() {
-  const { currentUser, isLoading, redirectToLogin, redirectToSignUp, currentOrganization } = useAuth();
+  const { currentUser, isUserLoaded, redirectToLogin, redirectToSignUp, currentOrganization, isOrganizationLoaded } =
+    useAuth();
+  const isLoading = !isUserLoaded && !isOrganizationLoaded;
   const location = useLocation();
-  const { environment } = useEnvironment();
-  const { apiKey } = useAPIKeys();
+  const { environments } = useEnvironment();
+  const hasToken = !!getToken();
 
   // TODO: Refactor this to a smaller size function
   useEffect(() => {
     const parsedSearchParams = new URLSearchParams(location.search);
+    const anonymousId = parsedSearchParams.get('anonymous_id');
 
     // Get the redirect URL of the Local Studio server
     const redirectURL = parsedSearchParams.get('redirect_url');
@@ -54,8 +55,14 @@ export function LocalStudioAuthenticator() {
 
     // If the user is not logged in, redirect to the login or signup page
     if (!currentUser) {
-      // If user is loading, wait for user to be loaded
-      if (!isLoading) {
+      /*
+       * If user is loading, wait for user to be loaded
+       * We check for token here because on login we have a race condition
+       * that is done with the loading and is missing a user but the auth token
+       * is already present, the data just needs to refresh. Whe should investigate
+       * why this race condition exists
+       */
+      if (!isLoading && !hasToken) {
         /*
          * If the user has logged in before, redirect to the login page.
          * After authentication, redirect back to the this /local-studio/auth path.
@@ -69,21 +76,15 @@ export function LocalStudioAuthenticator() {
          * After authentication, redirect back to the this /local-studio/auth path and
          * remember that studio needs to be in onboarding mode.
          */
-        // currentURL.searchParams.append('studio_path_hint', ROUTES.STUDIO_ONBOARDING);
-
-        return redirectToSignUp({ redirectURL: currentURL.href });
+        return redirectToSignUp({ redirectURL: currentURL.href, origin: 'cli', anonymousId: anonymousId || undefined });
       }
 
       return;
     }
 
-    // Wait for environment and apiKeys to be loaded
-    if (!environment || !apiKey) {
+    // Wait for environments and apiKeys to be loaded
+    if (!environments || environments?.length === 0) {
       return;
-    }
-
-    if (environment.name.toLowerCase() !== 'development') {
-      throw new Error('Local Studio works only with development api keys');
     }
 
     // Get the local application origin parameter
@@ -113,9 +114,18 @@ export function LocalStudioAuthenticator() {
     const localBridgeURL = buildBridgeURL(parsedApplicationOrigin.origin, tunnelPath);
     const tunnelBridgeURL = buildBridgeURL(tunnelOrigin, tunnelPath);
 
+    // TODO: Add apiKeys to the IEnvironment interface as they exist in the response
+
+    // @ts-expect-error
+    const devSecretKey = environments.find((env) => env.name.toLowerCase() === 'development')?.apiKeys[0]?.key;
+
+    if (environments?.length > 0 && !devSecretKey) {
+      throw new Error('Failed to load Local Studio: missing development environment secret key.');
+    }
+
     const state: StudioState = {
-      local: true,
-      devSecretKey: apiKey,
+      isLocalStudio: true,
+      devSecretKey,
       testUser: {
         id: currentUser._id,
         emailAddress: currentUser.email || '',
@@ -123,6 +133,7 @@ export function LocalStudioAuthenticator() {
       localBridgeURL,
       tunnelBridgeURL,
       organizationName: currentOrganization?.name || '',
+      anonymousId,
     };
 
     /*
@@ -138,15 +149,7 @@ export function LocalStudioAuthenticator() {
     // Redirect to Local Studio server
     window.location.href = finalRedirectURL.href;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentUser, environment, apiKey]);
+  }, [currentUser, environments, isLoading]);
 
-  return (
-    <Center
-      className={css({
-        marginTop: '[4rem]',
-      })}
-    >
-      <Loader color={colors.error} size={32} />
-    </Center>
-  );
+  return <LocalStudioPageLayout.LoadingDisplay />;
 }

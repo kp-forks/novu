@@ -2,6 +2,8 @@ import { Grid, JsonInput, useMantineTheme } from '@mantine/core';
 import { Button, colors, inputStyles, When } from '@novu/design-system';
 import { useEffect, useState } from 'react';
 import { useFormContext } from 'react-hook-form';
+import { useMutation } from '@tanstack/react-query';
+import { IMessageButton, inAppMessageFromBridgeOutputs } from '@novu/shared';
 import { IForm } from '../../../../pages/templates/components/formTypes';
 import { usePreviewInAppTemplate } from '../../../../pages/templates/hooks/usePreviewInAppTemplate';
 import { useStepFormPath } from '../../../../pages/templates/hooks/useStepFormPath';
@@ -9,7 +11,6 @@ import { useTemplateLocales } from '../../../../pages/templates/hooks/useTemplat
 import { useProcessVariables } from '../../../../hooks';
 import { api } from '../../../../api';
 import { useEnvironment } from '../../../../hooks/useEnvironment';
-import { useMutation } from '@tanstack/react-query';
 import { useTemplateEditorForm } from '../../../../pages/templates/components/TemplateEditorFormProvider';
 import { ControlVariablesForm } from '../../../../pages/templates/components/ControlVariablesForm';
 import { InAppBasePreview } from './InAppBasePreview';
@@ -19,7 +20,7 @@ export function InAppPreview({ showVariables = true }: { showVariables?: boolean
   const [payloadValue, setPayloadValue] = useState('{}');
   const { watch, formState } = useFormContext<IForm>();
   const { template } = useTemplateEditorForm();
-  const { bridge } = useEnvironment({}, template?.bridge);
+  const { bridge } = useEnvironment({ bridge: template?.bridge });
   const path = useStepFormPath();
 
   const content = watch(`${path}.template.content`);
@@ -28,19 +29,28 @@ export function InAppPreview({ showVariables = true }: { showVariables?: boolean
   const processedVariables = useProcessVariables(variables);
 
   const stepId = watch(`${path}.uuid`);
-  const [bridgeContent, setBridgeContent] = useState({ content: '', ctaButtons: [] });
+  const [bridgeContent, setBridgeContent] = useState<{
+    content: string;
+    ctaButtons: Array<IMessageButton>;
+    subject?: string;
+    avatar?: string;
+  }>({
+    content: '',
+    ctaButtons: [],
+    subject: '',
+    avatar: '',
+  });
 
-  const {
-    mutateAsync,
-    isLoading: isBridgeLoading,
-    error: previewError,
-  } = useMutation(
-    (data) => api.post('/v1/bridge/preview/' + formState?.defaultValues?.identifier + '/' + stepId, data),
+  const { mutateAsync, isLoading: isBridgeLoading } = useMutation(
+    (data) => api.post(`/v1/bridge/preview/${formState?.defaultValues?.identifier}/${stepId}`, data),
     {
       onSuccess(data) {
+        const inAppMessage = inAppMessageFromBridgeOutputs(data.outputs);
         setBridgeContent({
-          content: data.outputs.body,
-          ctaButtons: [],
+          subject: inAppMessage.subject,
+          content: inAppMessage.content,
+          avatar: inAppMessage.avatar,
+          ctaButtons: inAppMessage.cta.action.buttons,
         });
       },
     }

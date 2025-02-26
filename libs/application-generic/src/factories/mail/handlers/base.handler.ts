@@ -1,5 +1,5 @@
 import { IEmailOptions, IEmailProvider } from '@novu/stateless';
-import { ChannelTypeEnum } from '@novu/shared';
+import { ChannelTypeEnum, EmailProviderIdEnum } from '@novu/shared';
 
 import { IMailHandler } from '../interfaces/send.handler.interface';
 import { PlatformException } from '../../../utils/exceptions';
@@ -8,8 +8,8 @@ export abstract class BaseHandler implements IMailHandler {
   protected provider: IEmailProvider;
 
   protected constructor(
-    private providerId: string,
-    private channelType: string
+    private providerId: EmailProviderIdEnum,
+    private channelType: string,
   ) {}
 
   canHandle(providerId: string, channelType: ChannelTypeEnum) {
@@ -23,7 +23,9 @@ export abstract class BaseHandler implements IMailHandler {
       return {};
     }
 
-    return await this.provider.sendMessage(mailData);
+    const { bridgeProviderData, ...otherOptions } = mailData;
+
+    return await this.provider.sendMessage(otherOptions, bridgeProviderData);
   }
 
   public getProvider(): IEmailProvider {
@@ -37,9 +39,8 @@ export abstract class BaseHandler implements IMailHandler {
       to: ['no-reply@novu.co'],
     };
 
-    const { message, success, code } = await this.provider.checkIntegration(
-      mailData
-    );
+    const { message, success, code } =
+      await this.provider.checkIntegration(mailData);
 
     if (!success) {
       throw new PlatformException(
@@ -49,7 +50,7 @@ export abstract class BaseHandler implements IMailHandler {
           message:
             message ||
             'Something went wrong! Please double check your account details(Email/API key)',
-        })
+        }),
       );
     }
 

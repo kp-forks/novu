@@ -1,13 +1,13 @@
 import { UserSession } from '@novu/testing';
-import * as jwt from 'jsonwebtoken';
+import jwt from 'jsonwebtoken';
 import { subMinutes } from 'date-fns';
 import { expect } from 'chai';
+import { CommunityUserRepository } from '@novu/dal';
 import { UserSessionData } from '@novu/shared';
-import { UserRepository } from '@novu/dal';
 
-describe('User login - /auth/login (POST)', async () => {
+describe('User login - /auth/login (POST) #novu-v1-os', async () => {
   let session: UserSession;
-  const userRepository = new UserRepository();
+  const userRepository = new CommunityUserRepository();
   const userCredentials = {
     email: 'Testy.test22@gmail.com',
     password: '123Qwerty@',
@@ -78,7 +78,7 @@ describe('User login - /auth/login (POST)', async () => {
     it('should allow user to log in and reset the failed attempts counter after less than 5 failed attempts within 5 minutes', async () => {
       const SAFE_FAILED_LOGIN_ATTEMPTS = 3;
 
-      for (let i = 0; i < SAFE_FAILED_LOGIN_ATTEMPTS; i++) {
+      for (let i = 0; i < SAFE_FAILED_LOGIN_ATTEMPTS; i += 1) {
         await session.testAgent.post('/v1/auth/login').send({
           email: userCredentials.email,
           password: 'wrong-password',
@@ -108,7 +108,7 @@ describe('User login - /auth/login (POST)', async () => {
     it('should block the user account after 5 unsuccessful attempts within 5 minutes', async () => {
       const MAX_LOGIN_ATTEMPTS = 5;
 
-      for (let i = 0; i < MAX_LOGIN_ATTEMPTS; i++) {
+      for (let i = 0; i < MAX_LOGIN_ATTEMPTS; i += 1) {
         await session.testAgent.post('/v1/auth/login').send({
           email: userCredentials.email,
           password: 'wrong-password',
@@ -146,7 +146,7 @@ describe('User login - /auth/login (POST)', async () => {
         }
       );
 
-      for (let i = 0; i < MAX_LOGIN_ATTEMPTS - 1; i++) {
+      for (let i = 0; i < MAX_LOGIN_ATTEMPTS - 1; i += 1) {
         const { body } = await session.testAgent.post('/v1/auth/login').send({
           email: session.user.email,
           password: 'wrong-password',

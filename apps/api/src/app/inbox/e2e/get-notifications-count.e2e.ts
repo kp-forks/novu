@@ -2,25 +2,27 @@ import { expect } from 'chai';
 import { UserSession } from '@novu/testing';
 import { MessageRepository, NotificationTemplateEntity, SubscriberEntity, SubscriberRepository } from '@novu/dal';
 import {
-  StepTypeEnum,
-  ChannelCTATypeEnum,
-  TemplateVariableTypeEnum,
   ActorTypeEnum,
-  SystemAvatarIconEnum,
+  ChannelCTATypeEnum,
   ChannelTypeEnum,
+  StepTypeEnum,
+  SystemAvatarIconEnum,
+  TemplateVariableTypeEnum,
 } from '@novu/shared';
+import { Novu } from '@novu/api';
+import { initNovuClassSdk } from '../../shared/helpers/e2e/sdk/e2e-sdk.helper';
 
-describe('Get Notifications Count - /inbox/notifications/count (GET)', async () => {
+describe('Get Notifications Count - /inbox/notifications/count (GET) #novu-v2', async () => {
   let session: UserSession;
   let template: NotificationTemplateEntity;
   let subscriber: SubscriberEntity | null;
   const messageRepository = new MessageRepository();
   const subscriberRepository = new SubscriberRepository();
-
+  let novuClient: Novu;
   beforeEach(async () => {
     session = new UserSession();
     await session.initialize();
-
+    novuClient = initNovuClassSdk(session);
     subscriber = await subscriberRepository.findBySubscriberId(session.environment._id, session.subscriberId);
     template = await session.createTemplate({
       noFeedId: true,
@@ -51,50 +53,46 @@ describe('Get Notifications Count - /inbox/notifications/count (GET)', async () 
     });
   });
 
-  const getNotificationsCount = async ({
-    tags,
-    read,
-    archived,
-  }: {
-    tags?: string[];
-    read?: boolean;
-    archived?: boolean;
-  } = {}) => {
-    let query = '';
-    if (tags) {
-      query += tags.map((tag, index) => `${index > 0 ? '&' : ''}tags[]=${tag}`).join('');
-    }
-    if (typeof read !== 'undefined') {
-      query += `${query.length ? '&' : ''}read=${read}`;
-    }
-    if (typeof archived !== 'undefined') {
-      query += `${query.length ? '&' : ''}archived=${archived}`;
-    }
-
+  const getNotificationsCount = async (filters: Array<{ tags?: string[]; read?: boolean; archived?: boolean }>) => {
     return await session.testAgent
-      .get(`/v1/inbox/notifications/count?${query}`)
+      .get(`/v1/inbox/notifications/count?filters=${JSON.stringify(filters)}`)
       .set('Authorization', `Bearer ${session.subscriberToken}`);
   };
 
   const triggerEvent = async (templateToTrigger: NotificationTemplateEntity, times = 1) => {
     const promises: Array<Promise<unknown>> = [];
-    for (let i = 0; i < times; i++) {
-      promises.push(session.triggerEvent(templateToTrigger.triggers[0].identifier, session.subscriberId));
+    for (let i = 0; i < times; i += 1) {
+      promises.push(
+        novuClient.trigger({
+          workflowId: templateToTrigger.triggers[0].identifier,
+          to: { subscriberId: session.subscriberId },
+        })
+      );
     }
 
     await Promise.all(promises);
-    await session.awaitRunningJobs(templateToTrigger._id);
+    await session.waitForJobCompletion(templateToTrigger._id);
   };
+
+  it('should throw exception when filtering for unread and archived notifications', async function () {
+    await triggerEvent(template);
+
+    const { body, status } = await getNotificationsCount([{ read: false, archived: true }]);
+
+    expect(status).to.equal(400);
+    expect(body.message).to.equal('Filtering for unread and archived notifications is not supported.');
+  });
 
   it('should return all notifications count', async function () {
     const count = 4;
     await triggerEvent(template, count);
-    const { body, status } = await getNotificationsCount();
+    const { body, status } = await getNotificationsCount([{}]);
 
     expect(status).to.equal(200);
     expect(body.data).to.be.ok;
-    expect(body.data.count).to.eq(count);
-    expect(body.filter).to.deep.equal({});
+    expect(body.data.length).to.eq(1);
+    expect(body.data[0].count).to.eq(count);
+    expect(body.data[0].filter).to.deep.equal({});
   });
 
   it('should return notifications count for specified tags', async function () {
@@ -117,12 +115,13 @@ describe('Get Notifications Count - /inbox/notifications/count (GET)', async () 
     await triggerEvent(template, 2);
     await triggerEvent(templateWithTags, count);
 
-    const { body, status } = await getNotificationsCount({ tags });
+    const { body, status } = await getNotificationsCount([{ tags }]);
 
     expect(status).to.equal(200);
     expect(body.data).to.be.ok;
-    expect(body.data.count).to.eq(count);
-    expect(body.filter).to.deep.equal({
+    expect(body.data.length).to.eq(1);
+    expect(body.data[0].count).to.eq(count);
+    expect(body.data[0].filter).to.deep.equal({
       tags,
     });
   });
@@ -139,12 +138,13 @@ describe('Get Notifications Count - /inbox/notifications/count (GET)', async () 
       { $set: { read: true } }
     );
 
-    const { body, status } = await getNotificationsCount({ read: true });
+    const { body, status } = await getNotificationsCount([{ read: true }]);
 
     expect(status).to.equal(200);
     expect(body.data).to.be.ok;
-    expect(body.data.count).to.eq(count);
-    expect(body.filter).to.deep.equal({
+    expect(body.data.length).to.eq(1);
+    expect(body.data[0].count).to.eq(count);
+    expect(body.data[0].filter).to.deep.equal({
       read: true,
     });
   });
@@ -161,12 +161,13 @@ describe('Get Notifications Count - /inbox/notifications/count (GET)', async () 
       { $set: { archived: true } }
     );
 
-    const { body, status } = await getNotificationsCount({ archived: true });
+    const { body, status } = await getNotificationsCount([{ archived: true }]);
 
     expect(status).to.equal(200);
     expect(body.data).to.be.ok;
-    expect(body.data.count).to.eq(count);
-    expect(body.filter).to.deep.equal({
+    expect(body.data.length).to.eq(1);
+    expect(body.data[0].count).to.eq(count);
+    expect(body.data[0].filter).to.deep.equal({
       archived: true,
     });
   });
@@ -183,12 +184,13 @@ describe('Get Notifications Count - /inbox/notifications/count (GET)', async () 
       { $set: { read: true, archived: true } }
     );
 
-    const { body, status } = await getNotificationsCount({ read: true, archived: true });
+    const { body, status } = await getNotificationsCount([{ read: true, archived: true }]);
 
     expect(status).to.equal(200);
     expect(body.data).to.be.ok;
-    expect(body.data.count).to.eq(count);
-    expect(body.filter).to.deep.equal({
+    expect(body.data.length).to.eq(1);
+    expect(body.data[0].count).to.eq(count);
+    expect(body.data[0].filter).to.deep.equal({
       read: true,
       archived: true,
     });
@@ -224,14 +226,48 @@ describe('Get Notifications Count - /inbox/notifications/count (GET)', async () 
       { $set: { read: true } }
     );
 
-    const { body, status } = await getNotificationsCount({ tags, read: true });
+    const { body, status } = await getNotificationsCount([{ tags, read: true }]);
 
     expect(status).to.equal(200);
     expect(body.data).to.be.ok;
-    expect(body.data.count).to.eq(count);
-    expect(body.filter).to.deep.equal({
+    expect(body.data.length).to.eq(1);
+    expect(body.data[0].count).to.eq(count);
+    expect(body.data[0].filter).to.deep.equal({
       tags,
       read: true,
     });
+  });
+
+  it('should return notification counts for multiple filters', async function () {
+    const count = 4;
+    const tags = ['hello'];
+    const templateWithTags = await session.createTemplate({
+      noFeedId: true,
+      tags,
+      steps: [
+        {
+          type: StepTypeEnum.IN_APP,
+          content: 'Test content for newsletter',
+          actor: {
+            type: ActorTypeEnum.SYSTEM_ICON,
+            data: SystemAvatarIconEnum.WARNING,
+          },
+        },
+      ],
+    });
+    await triggerEvent(template, 2);
+    await triggerEvent(templateWithTags, count);
+
+    const { body, status } = await getNotificationsCount([{ tags }, { read: false }]);
+
+    expect(status).to.equal(200);
+    expect(body.data).to.be.ok;
+    expect(body.data.length).to.eq(2);
+    expect(body.data[0].count).to.eq(count);
+    expect(body.data[0].filter).to.deep.equal({
+      tags,
+    });
+    expect(body.data[1].count).to.eq(6);
+    expect(body.data[1].filter).to.deep.equal({ read: false });
   });
 });

@@ -1,4 +1,4 @@
-import { Theme } from '../context';
+import type { Theme } from '../types';
 
 export const dark: Theme = {
   variables: {
@@ -7,5 +7,6 @@ export const dark: Theme = {
     colorForeground: '#EDEDEF',
     colorSecondary: '#7E7D86',
     colorSecondaryForeground: '#EDEDEF',
+    colorShadow: 'black',
   },
 };

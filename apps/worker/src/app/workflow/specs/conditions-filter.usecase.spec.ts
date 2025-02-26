@@ -1,5 +1,5 @@
 import { expect } from 'chai';
-import * as sinon from 'sinon';
+import sinon from 'sinon';
 import axios from 'axios';
 import { Duration, sub } from 'date-fns';
 import {
@@ -616,7 +616,7 @@ describe('Message filter matcher', function () {
     expect(requestsCount).to.equal(0);
     expect(matchedMessage.passed).to.equal(true);
 
-    //Reorder children order to make sure it is not random
+    // Reorder children order to make sure it is not random
 
     matchedMessage = await conditionsFilter.filter(
       mapConditionsFilterCommand({
@@ -680,7 +680,7 @@ describe('Message filter matcher', function () {
     expect(requestsCount).to.equal(0);
     expect(matchedMessage.passed).to.equal(false);
 
-    //Reorder children order to make sure it is not random
+    // Reorder children order to make sure it is not random
 
     matchedMessage = await conditionsFilter.filter(
       mapConditionsFilterCommand({

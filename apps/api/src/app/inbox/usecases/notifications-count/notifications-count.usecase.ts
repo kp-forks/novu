@@ -11,17 +11,22 @@ const MAX_NOTIFICATIONS_COUNT = 99;
 
 @Injectable()
 export class NotificationsCount {
-  constructor(private messageRepository: MessageRepository, private subscriberRepository: SubscriberRepository) {}
+  constructor(
+    private messageRepository: MessageRepository,
+    private subscriberRepository: SubscriberRepository
+  ) {}
 
   @CachedQuery({
     builder: ({ environmentId, subscriberId, ...command }: NotificationsCountCommand) =>
       buildMessageCountKey().cache({
-        environmentId: environmentId,
-        subscriberId: subscriberId,
+        environmentId,
+        subscriberId,
         ...command,
       }),
   })
-  async execute(command: NotificationsCountCommand): Promise<{ data: { count: number }; filter: NotificationFilter }> {
+  async execute(
+    command: NotificationsCountCommand
+  ): Promise<{ data: Array<{ count: number; filter: NotificationFilter }> }> {
     const subscriber = await this.subscriberRepository.findBySubscriberId(
       command.environmentId,
       command.subscriberId,
@@ -34,15 +39,20 @@ export class NotificationsCount {
       );
     }
 
-    const filter = { tags: command.tags, read: command.read, archived: command.archived };
-    const count = await this.messageRepository.getCount(
-      command.environmentId,
-      subscriber._id,
-      ChannelTypeEnum.IN_APP,
-      filter,
-      { limit: MAX_NOTIFICATIONS_COUNT }
+    const hasUnsupportedFilter = command.filters.some((filter) => filter.read === false && filter.archived === true);
+    if (hasUnsupportedFilter) {
+      throw new ApiException('Filtering for unread and archived notifications is not supported.');
+    }
+
+    const getCountPromises = command.filters.map((filter) =>
+      this.messageRepository.getCount(command.environmentId, subscriber._id, ChannelTypeEnum.IN_APP, filter, {
+        limit: MAX_NOTIFICATIONS_COUNT,
+      })
     );
 
-    return { data: { count }, filter };
+    const counts = await Promise.all(getCountPromises);
+    const result = counts.map((count, index) => ({ count, filter: command.filters[index] }));
+
+    return { data: result };
   }
 }

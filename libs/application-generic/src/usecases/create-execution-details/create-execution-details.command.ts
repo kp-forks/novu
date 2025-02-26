@@ -1,11 +1,6 @@
-import { IsNotEmpty, IsOptional, IsString, IsDate } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString, IsDate, IsMongoId } from 'class-validator';
 import { ExecutionDetailsEntity, ExecutionDetailsRepository } from '@novu/dal';
-import {
-  ExecutionDetailsSourceEnum,
-  ExecutionDetailsStatusEnum,
-  IJob,
-  StepTypeEnum,
-} from '@novu/shared';
+import { ExecutionDetailsSourceEnum, ExecutionDetailsStatusEnum, IJob, StepTypeEnum } from '@novu/shared';
 import { EmailEventStatusEnum, SmsEventStatusEnum } from '@novu/stateless';
 
 import { EnvironmentWithSubscriber } from '../../commands/project.command';
@@ -25,9 +20,6 @@ export class CreateExecutionDetailsCommand extends EnvironmentWithSubscriber {
 
   @IsOptional()
   providerId?: string;
-
-  @IsOptional()
-  expireAt?: string;
 
   @IsNotEmpty()
   transactionId: string;
@@ -82,7 +74,6 @@ export class CreateExecutionDetailsCommand extends EnvironmentWithSubscriber {
     | 'providerId'
     | 'transactionId'
     | 'channel'
-    | 'expireAt'
   > {
     return {
       environmentId: job._environmentId,
@@ -96,7 +87,6 @@ export class CreateExecutionDetailsCommand extends EnvironmentWithSubscriber {
       providerId: job.providerId,
       transactionId: job.transactionId,
       channel: job.type,
-      expireAt: job.expireAt,
     };
   }
 

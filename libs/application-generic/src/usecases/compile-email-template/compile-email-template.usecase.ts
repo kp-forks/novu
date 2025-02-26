@@ -3,13 +3,9 @@ import { merge } from 'lodash';
 import { readFile } from 'fs/promises';
 import { ModuleRef } from '@nestjs/core';
 
-import { IEmailBlock, OrganizationRepository } from '@novu/dal';
+import { IEmailBlock, CommunityOrganizationRepository } from '@novu/dal';
 
-import {
-  CompileTemplate,
-  CompileTemplateCommand,
-  CompileTemplateBase,
-} from '../compile-template';
+import { CompileTemplate, CompileTemplateBase } from '../compile-template';
 import { ApiException } from '../../utils/exceptions';
 import { CompileEmailTemplateCommand } from './compile-email-template.command';
 import { LayoutDto, GetLayoutCommand, GetLayoutUseCase } from '../get-layout';
@@ -20,35 +16,21 @@ import { GetNovuLayout } from '../get-novu-layout';
 export class CompileEmailTemplate extends CompileTemplateBase {
   constructor(
     private compileTemplate: CompileTemplate,
-    protected organizationRepository: OrganizationRepository,
+    protected communityOrganizationRepository: CommunityOrganizationRepository,
     private getLayoutUsecase: GetLayoutUseCase,
     private getNovuLayoutUsecase: GetNovuLayout,
-    protected moduleRef: ModuleRef
+    protected moduleRef: ModuleRef,
   ) {
-    super(organizationRepository, moduleRef);
+    super(communityOrganizationRepository, moduleRef);
   }
 
   public async execute(
     command: CompileEmailTemplateCommand,
-    initiateTranslations?: (
-      environmentId: string,
-      organizationId,
-      locale: string
-    ) => Promise<void>
+    // we need i18nInstance outside the command on order to avoid command serialization on it.
+    i18nInstance?: any,
   ) {
     const verifyPayloadService = new VerifyPayloadService();
     const organization = await this.getOrganization(command.organizationId);
-
-    let i18nInstance;
-    if (initiateTranslations) {
-      i18nInstance = await initiateTranslations(
-        command.environmentId,
-        command.organizationId,
-        command.locale ||
-          command.payload.subscriber?.locale ||
-          organization.defaultLocale
-      );
-    }
 
     const isEditorMode = command.contentType === 'editor';
 
@@ -61,7 +43,7 @@ export class CompileEmailTemplate extends CompileTemplateBase {
           layoutId: command.layoutId,
           environmentId: command.environmentId,
           organizationId: command.organizationId,
-        })
+        }),
       );
 
       layoutContent = layout.content;
@@ -72,7 +54,7 @@ export class CompileEmailTemplate extends CompileTemplateBase {
     const layoutVariables = layout?.variables || [];
     const defaultPayload = verifyPayloadService.verifyPayload(
       layoutVariables,
-      command.payload
+      command.payload,
     );
 
     let helperBlocksContent: string | null = null;
@@ -82,9 +64,10 @@ export class CompileEmailTemplate extends CompileTemplateBase {
 
     let subject = '';
     let senderName;
-    const content: string | IEmailBlock[] = command.content;
-    let preheader = command.preheader;
+    const { content } = command;
+    let { preheader } = command;
 
+    // eslint-disable-next-line no-param-reassign
     command.payload = merge({}, defaultPayload, command.payload);
 
     const payload = {
@@ -101,7 +84,7 @@ export class CompileEmailTemplate extends CompileTemplateBase {
       subject = await this.renderContent(
         command.subject,
         payload,
-        i18nInstance
+        i18nInstance,
       );
 
       if (preheader) {
@@ -112,17 +95,17 @@ export class CompileEmailTemplate extends CompileTemplateBase {
         senderName = await this.renderContent(
           command.senderName,
           payload,
-          i18nInstance
+          i18nInstance,
         );
       }
     } catch (e: any) {
       throw new ApiException(
-        e?.message || `Email subject message content could not be generated`
+        e?.message || `Email subject message content could not be generated`,
       );
     }
 
     const customLayout = CompileEmailTemplate.addPreheader(
-      layoutContent as string
+      layoutContent as string,
     );
 
     if (isEditorMode) {
@@ -130,12 +113,12 @@ export class CompileEmailTemplate extends CompileTemplateBase {
         block.content = await this.renderContent(
           block.content,
           payload,
-          i18nInstance
+          i18nInstance,
         );
         block.url = await this.renderContent(
           block.url || '',
           payload,
-          i18nInstance
+          i18nInstance,
         );
       }
     }
@@ -148,22 +131,26 @@ export class CompileEmailTemplate extends CompileTemplateBase {
       blocks: isEditorMode ? content : [],
     };
 
-    const body = await this.compileTemplate.execute({
-      i18next: i18nInstance,
-      template: !isEditorMode
-        ? (content as string)
-        : (helperBlocksContent as string),
-      data: templateVariables,
-    });
+    const body = await this.compileTemplate.execute(
+      {
+        template: !isEditorMode
+          ? (content as string)
+          : (helperBlocksContent as string),
+        data: templateVariables,
+      },
+      i18nInstance,
+    );
 
     templateVariables.body = body as string;
 
     const html = customLayout
-      ? await this.compileTemplate.execute({
-          i18next: i18nInstance,
-          template: customLayout,
-          data: templateVariables,
-        })
+      ? await this.compileTemplate.execute(
+          {
+            template: customLayout,
+            data: templateVariables,
+          },
+          i18nInstance,
+        )
       : body;
 
     return { html, content, subject, senderName };
@@ -172,15 +159,17 @@ export class CompileEmailTemplate extends CompileTemplateBase {
   private async renderContent(
     content: string,
     payload: Record<string, unknown>,
-    i18nInstance: any
+    i18nInstance: any,
   ) {
-    const renderedContent = await this.compileTemplate.execute({
-      i18next: i18nInstance,
-      template: content,
-      data: {
-        ...payload,
+    const renderedContent = await this.compileTemplate.execute(
+      {
+        template: content,
+        data: {
+          ...payload,
+        },
       },
-    });
+      i18nInstance,
+    );
 
     return renderedContent?.trim() || '';
   }
@@ -188,13 +177,14 @@ export class CompileEmailTemplate extends CompileTemplateBase {
   public static addPreheader(content: string): string {
     // "&nbsp;&zwnj;&nbsp;&zwnj;" is needed to spacing away the rest of the email from the preheader area in email clients
     return content?.replace(
+      // eslint-disable-next-line no-useless-escape
       /<body\b[^\<\>]*?>/,
       `$&{{#if preheader}}
           <div style="display: none; max-height: 0px; overflow: hidden;">
             {{preheader}}
             &nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;
           </div>
-        {{/if}}`
+        {{/if}}`,
     );
   }
 
