@@ -15,10 +15,10 @@ const workflowId = 'code-created-workflow';
 const inAppStepId = 'send-in-app';
 const body = 'To join the Novu project, click the link below';
 
-let bridgeServer: BridgeServer;
+let bridgeServer: TestBridgeServer;
 test.beforeEach(async ({ session }) => {
   const secretKey = session.developmentEnvironment.apiKeys[0].key;
-  bridgeServer = new BridgeServer({ secretKey, apiUrl: process.env.API_URL });
+  bridgeServer = new TestBridgeServer({ secretKey, apiUrl: process.env.API_URL });
 
   const newWorkflow = workflow(workflowId, async ({ step }) => {
     await step.inApp(
