@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ChannelTypeEnum, PreferenceOverrideSourceEnum } from '@novu/shared';
+import { ChannelTypeEnum, IPreferenceOverride, PreferenceOverrideSourceEnum } from '@novu/shared';
 import { PreferenceChannels } from '../../shared/dtos/preference-channels';
 
 class TemplateResponse {
@@ -23,14 +23,14 @@ class TemplateResponse {
   critical: boolean;
 }
 
-class Overrides {
+export class Overrides implements IPreferenceOverride {
   @ApiProperty({
-    type: ChannelTypeEnum,
+    enum: ChannelTypeEnum,
     description: 'The channel type which is overridden',
   })
   channel: ChannelTypeEnum;
   @ApiProperty({
-    type: PreferenceOverrideSourceEnum,
+    enum: PreferenceOverrideSourceEnum,
     description: 'The source of overrides',
   })
   source: PreferenceOverrideSourceEnum;

@@ -1,34 +1,20 @@
-import { Subscriber } from './subscriber.types';
-import { ITenantDefine, ITriggerPayload, TriggerRecipientsPayload, TriggerRecipientSubscriber } from '@novu/shared';
+import { PostActionEnum } from '../constants';
+import { WithPassthrough } from './provider.types';
+import type { Subscriber } from './subscriber.types';
 
 export type Event = {
-  /** @deprecated */
-  data: Record<string, unknown>;
   payload: Record<string, unknown>;
   workflowId: string;
   stepId: string;
-  /** @deprecated */
-  inputs: Record<string, unknown>;
   controls: Record<string, unknown>;
   state: State[];
-  action: 'execute' | 'preview';
+  action: Exclude<PostActionEnum, PostActionEnum.TRIGGER>;
   subscriber: Subscriber;
-};
-
-export type TriggerEvent = {
-  workflowId: string;
-  to: TriggerRecipientsPayload;
-  actor?: TriggerRecipientSubscriber;
-  bridgeUrl?: string;
-  payload: ITriggerPayload;
-  tenant?: ITenantDefine;
-  transactionId?: string;
-  overrides?: Record<string, unknown>;
 };
 
 export type State = {
   stepId: string;
-  outputs: any;
+  outputs: Record<string, unknown>;
   state: { status: string; error?: string };
 };
 
@@ -41,9 +27,13 @@ export type ExecuteOutputMetadata = {
   duration: number;
 };
 
+export type ExecuteOutputOptions = {
+  skip: boolean;
+};
+
 export type ExecuteOutput = {
-  outputs: unknown;
-  providers: unknown;
-  options: unknown;
+  outputs: Record<string, unknown>;
+  providers?: Record<string, WithPassthrough<Record<string, unknown>>>;
+  options: ExecuteOutputOptions;
   metadata: ExecuteOutputMetadata;
 };

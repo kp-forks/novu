@@ -9,11 +9,11 @@ import { useStepFormPath } from '../hooks/useStepFormPath';
 import { useEnvironment } from '../../../hooks';
 import { useTemplateEditorForm } from '../components/TemplateEditorFormProvider';
 
-const amountDefaultValue = '5';
+const amountDefaultValue = '30';
 
 export const RegularDigestMetadata = () => {
   const { template } = useTemplateEditorForm();
-  const { readonly } = useEnvironment({}, template?.bridge);
+  const { readonly } = useEnvironment({ bridge: template?.bridge });
   const {
     control,
     formState: { errors, isSubmitted },

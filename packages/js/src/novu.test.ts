@@ -1,93 +1,78 @@
 import { Novu } from './novu';
 
-const mockFeedResponse = {
+const mockSessionResponse = { data: { token: 'cafebabe' } };
+
+const mockNotificationsResponse = {
   data: [],
   hasMore: true,
-  totalCount: 0,
-  pageSize: 10,
-  page: 1,
+  filter: { tags: [], read: false, archived: false },
 };
 
-const initializeSession = jest.fn().mockResolvedValue({ token: 'token', profile: 'profile' });
-const getNotificationsList = jest.fn(() => mockFeedResponse);
-
-jest.mock('@novu/client', () => ({
-  ...jest.requireActual('@novu/client'),
-  ApiService: jest.fn().mockImplementation(() => {
-    const apiService = {
-      isAuthenticated: false,
-      setAuthorizationToken: jest.fn(() => {
-        apiService.isAuthenticated = true;
-      }),
-      getNotificationsList,
+async function mockFetch(url: string, reqInit: Request) {
+  if (url.includes('/session')) {
+    return {
+      ok: true,
+      status: 200,
+      json: async () => mockSessionResponse,
     };
-
-    return apiService;
-  }),
-}));
-
-jest.mock('./api/inbox-service', () => ({
-  ...jest.requireActual('./api/inbox-service'),
-  InboxService: jest.fn().mockImplementation(() => {
-    const inboxService = {
-      initializeSession,
+  }
+  if (url.includes('/notifications')) {
+    return {
+      ok: true,
+      status: 200,
+      json: async () => mockNotificationsResponse,
     };
+  }
+  throw new Error(`Unmocked request: ${url}`);
+}
 
-    return inboxService;
-  }),
-}));
+beforeAll(() => jest.spyOn(global, 'fetch'));
+afterAll(() => jest.restoreAllMocks());
 
 describe('Novu', () => {
+  const applicationIdentifier = 'foo';
+  const subscriberId = 'bar';
+
   beforeEach(() => {
-    jest.clearAllMocks();
+    // @ts-ignore
+    global.fetch.mockImplementation(mockFetch) as jest.Mock;
   });
 
-  describe('lazy session initialization', () => {
-    test('should call the queued feeds.fetch after the session is initialized', async () => {
-      const page = 1;
-      const novu = new Novu({ applicationIdentifier: 'applicationIdentifier', subscriberId: 'subscriberId' });
-      const res = await novu.feeds.fetch({ page });
+  describe('http client', () => {
+    test('should call the notifications.list after the session is initialized', async () => {
+      const options = {
+        limit: 10,
+        offset: 0,
+      };
 
-      expect(initializeSession).toHaveBeenCalledTimes(1);
-      expect(getNotificationsList).toHaveBeenCalledWith(page, {});
-      expect(res).toEqual(mockFeedResponse);
-    });
+      const novu = new Novu({ applicationIdentifier, subscriberId });
+      expect(fetch).toHaveBeenNthCalledWith(1, 'https://api.novu.co/v1/inbox/session/', {
+        method: 'POST',
+        body: JSON.stringify({ applicationIdentifier, subscriberId }),
+        headers: {
+          'Content-Type': 'application/json',
+          'Novu-API-Version': '2024-06-26',
+          'User-Agent': '@novu/js@test',
+        },
+      });
 
-    test('should call the feeds.fetch right away when session is already initialized', async () => {
-      const page = 1;
-      const novu = new Novu({ applicationIdentifier: 'applicationIdentifier', subscriberId: 'subscriberId' });
-      // await for session initialization
-      await new Promise((resolve) => setTimeout(resolve, 10));
+      const { data } = await novu.notifications.list(options);
+      expect(fetch).toHaveBeenNthCalledWith(2, 'https://api.novu.co/v1/inbox/notifications/?limit=10', {
+        method: 'GET',
+        body: undefined,
+        headers: {
+          Authorization: 'Bearer cafebabe',
+          'Content-Type': 'application/json',
+          'Novu-API-Version': '2024-06-26',
+          'User-Agent': '@novu/js@test',
+        },
+      });
 
-      const res = await novu.feeds.fetch({ page });
-
-      expect(initializeSession).toHaveBeenCalledTimes(1);
-      expect(getNotificationsList).toHaveBeenCalledWith(page, {});
-      expect(res).toEqual(mockFeedResponse);
-    });
-
-    test('should reject the queued feeds.fetch if session initialization fails', async () => {
-      const page = 1;
-      const error = new Error('Failed to initialize session');
-      initializeSession.mockRejectedValueOnce(error);
-      const novu = new Novu({ applicationIdentifier: 'applicationIdentifier', subscriberId: 'subscriberId' });
-
-      const fetchPromise = novu.feeds.fetch({ page });
-
-      await expect(fetchPromise).rejects.toEqual(error);
-    });
-
-    test('should reject the feeds.fetch right away when session initialization has failed', async () => {
-      const page = 1;
-      const error = new Error('Failed to initialize session');
-      initializeSession.mockRejectedValueOnce(error);
-      const novu = new Novu({ applicationIdentifier: 'applicationIdentifier', subscriberId: 'subscriberId' });
-      // await for session initialization
-      await new Promise((resolve) => setTimeout(resolve, 10));
-
-      const fetchPromise = novu.feeds.fetch({ page });
-
-      await expect(fetchPromise).rejects.toEqual(error);
+      expect(data).toEqual({
+        notifications: mockNotificationsResponse.data,
+        hasMore: mockNotificationsResponse.hasMore,
+        filter: mockNotificationsResponse.filter,
+      });
     });
   });
 });

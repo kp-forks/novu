@@ -1,4 +1,4 @@
-import { Schema } from '../../../types/schema.types';
+import type { JsonSchema } from '../../../types/schema.types';
 
 export const delayOutputSchema = {
   type: 'object',
@@ -15,7 +15,7 @@ export const delayOutputSchema = {
   },
   required: ['amount', 'unit'],
   additionalProperties: false,
-} as const satisfies Schema;
+} as const satisfies JsonSchema;
 
 export const delayResultSchema = {
   type: 'object',
@@ -24,9 +24,9 @@ export const delayResultSchema = {
   },
   required: ['duration'],
   additionalProperties: false,
-} as const satisfies Schema;
+} as const satisfies JsonSchema;
 
-export const delayChannelSchemas = {
+export const delayActionSchemas = {
   output: delayOutputSchema,
   result: delayResultSchema,
 };

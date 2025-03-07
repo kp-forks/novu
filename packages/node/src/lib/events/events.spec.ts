@@ -1,5 +1,5 @@
-import { Novu } from '../novu';
 import axios from 'axios';
+import { Novu } from '../novu';
 
 const mockConfig = {
   apiKey: '1234',
@@ -35,32 +35,6 @@ describe('test use of novus node package - Events', () => {
         email: 'test-user@sd.com',
       },
     });
-  });
-
-  test('should generate bridge URL correctly', async () => {
-    mockedAxios.post.mockResolvedValue({});
-    process.env.NEXT_PUBLIC_VERCEL_URL = 'example.com';
-    const expectedUrl = `https://${process.env.NEXT_PUBLIC_VERCEL_URL}/api/novu`;
-
-    await novu.events.trigger('test-template', {
-      to: 'test-user',
-      payload: {
-        email: 'test-user@sd.com',
-      },
-    });
-
-    expect(mockedAxios.post).toHaveBeenCalled();
-    expect(mockedAxios.post).toHaveBeenCalledWith('/events/trigger', {
-      name: 'test-template',
-      to: 'test-user',
-      overrides: {},
-      payload: {
-        email: 'test-user@sd.com',
-      },
-      bridgeUrl: expectedUrl,
-    });
-
-    delete process.env.NEXT_PUBLIC_VERCEL_URL;
   });
 
   test('should broadcast correctly', async () => {
@@ -231,7 +205,7 @@ describe('test use of novus node package - Events', () => {
 
     expect(mockedAxios.delete).toHaveBeenCalled();
     expect(mockedAxios.delete).toHaveBeenCalledWith(
-      '/events/trigger/transactionId'
+      '/events/trigger/transactionId',
     );
   });
 

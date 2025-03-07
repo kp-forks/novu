@@ -1,13 +1,13 @@
 import { ISmsOptions, ISmsProvider } from '@novu/stateless';
-import { ChannelTypeEnum, ICredentials } from '@novu/shared';
+import { ChannelTypeEnum, ICredentials, SmsProviderIdEnum } from '@novu/shared';
 import { ISmsHandler } from '../interfaces';
 
 export abstract class BaseSmsHandler implements ISmsHandler {
   protected provider: ISmsProvider;
 
   protected constructor(
-    private providerId: string,
-    private channelType: string
+    private providerId: SmsProviderIdEnum,
+    private channelType: string,
   ) {}
 
   getProvider(): ISmsProvider {
@@ -21,11 +21,13 @@ export abstract class BaseSmsHandler implements ISmsHandler {
   async send(options: ISmsOptions) {
     if (process.env.NODE_ENV === 'test') {
       throw new Error(
-        'Currently 3rd-party packages test are not support on test env'
+        'Currently 3rd-party packages test are not support on test env',
       );
     }
 
-    return await this.provider.sendMessage(options);
+    const { bridgeProviderData, ...otherOptions } = options;
+
+    return await this.provider.sendMessage(otherOptions, bridgeProviderData);
   }
 
   abstract buildProvider(credentials: ICredentials);

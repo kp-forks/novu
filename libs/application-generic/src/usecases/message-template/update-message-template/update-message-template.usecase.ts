@@ -10,7 +10,7 @@ import {
   MessageTemplateRepository,
   MessageRepository,
 } from '@novu/dal';
-import { ChangeEntityTypeEnum, WorkflowTypeEnum } from '@novu/shared';
+import { ChangeEntityTypeEnum, isBridgeWorkflow } from '@novu/shared';
 
 import { UpdateMessageTemplateCommand } from './update-message-template.command';
 import { CreateChange, CreateChangeCommand } from '../../create-change';
@@ -25,11 +25,11 @@ export class UpdateMessageTemplate {
     private messageRepository: MessageRepository,
     private changeRepository: ChangeRepository,
     private createChange: CreateChange,
-    private updateChange: UpdateChange
+    private updateChange: UpdateChange,
   ) {}
 
   async execute(
-    command: UpdateMessageTemplateCommand
+    command: UpdateMessageTemplateCommand,
   ): Promise<MessageTemplateEntity> {
     const existingTemplate = await this.messageTemplateRepository.findOne({
       _id: command.templateId,
@@ -37,7 +37,7 @@ export class UpdateMessageTemplate {
     });
     if (!existingTemplate) {
       throw new NotFoundException(
-        `Message template with id ${command.templateId} not found`
+        `Message template with id ${command.templateId} not found`,
       );
     }
 
@@ -106,11 +106,8 @@ export class UpdateMessageTemplate {
       updatePayload.actor = command.actor;
     }
 
-    if (command.inputs) {
-      updatePayload.inputs = command.controls || command.inputs;
-    }
     if (command.controls) {
-      updatePayload.controls = command.controls || command.inputs;
+      updatePayload.controls = command.controls;
     }
 
     if (command.output) {
@@ -134,7 +131,7 @@ export class UpdateMessageTemplate {
       {
         $set: updatePayload,
         $unset: unsetPayload,
-      }
+      },
     );
 
     const item = await this.messageTemplateRepository.findOne({
@@ -143,14 +140,14 @@ export class UpdateMessageTemplate {
     });
     if (!item)
       throw new NotFoundException(
-        `Message template with id ${command.templateId} is not found`
+        `Message template with id ${command.templateId} is not found`,
       );
 
     if (command.feedId || (!command.feedId && existingTemplate._feedId)) {
       await this.messageRepository.updateFeedByMessageTemplateId(
         command.environmentId,
         command.templateId,
-        command.feedId
+        command.feedId,
       );
     }
 
@@ -158,9 +155,9 @@ export class UpdateMessageTemplate {
       const changeId = await this.changeRepository.getChangeId(
         command.environmentId,
         ChangeEntityTypeEnum.MESSAGE_TEMPLATE,
-        item._id
+        item._id,
       );
-      if (command.workflowType !== WorkflowTypeEnum.ECHO) {
+      if (!isBridgeWorkflow(command.workflowType)) {
         await this.createChange.execute(
           CreateChangeCommand.create({
             organizationId: command.organizationId,
@@ -170,7 +167,7 @@ export class UpdateMessageTemplate {
             type: ChangeEntityTypeEnum.MESSAGE_TEMPLATE,
             parentChangeId: command.parentChangeId,
             changeId,
-          })
+          }),
         );
       }
     }
@@ -184,7 +181,7 @@ export class UpdateMessageTemplate {
           environmentId: command.environmentId,
           organizationId: command.organizationId,
           userId: command.userId,
-        })
+        }),
       );
     }
 
@@ -197,7 +194,7 @@ export class UpdateMessageTemplate {
           environmentId: command.environmentId,
           organizationId: command.organizationId,
           userId: command.userId,
-        })
+        }),
       );
     }
 

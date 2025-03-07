@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import { ModuleRef } from '@nestjs/core';
 
 import {
   DigestTypeEnum,
@@ -7,32 +6,29 @@ import {
   ExecutionDetailsStatusEnum,
   IDigestRegularMetadata,
   IPreferenceChannels,
+  PreferencesTypeEnum,
   StepTypeEnum,
+  WorkflowTypeEnum,
 } from '@novu/shared';
 import {
   AnalyticsService,
-  buildNotificationTemplateKey,
-  buildSubscriberKey,
-  CachedEntity,
   ConditionsFilter,
   ConditionsFilterCommand,
   DetailEnum,
-  ExecuteOutput,
-  ExecutionLogRoute,
-  ExecutionLogRouteCommand,
-  GetSubscriberGlobalPreference,
-  GetSubscriberGlobalPreferenceCommand,
+  CreateExecutionDetails,
+  CreateExecutionDetailsCommand,
+  GetPreferences,
   GetSubscriberTemplatePreference,
   GetSubscriberTemplatePreferenceCommand,
   IConditionsFilterResponse,
   IFilterVariables,
-  Instrument,
   InstrumentUsecase,
-  IBridgeChannelResponse,
-  IUseCaseInterfaceInline,
   NormalizeVariables,
   NormalizeVariablesCommand,
-  requireInject,
+  PlatformException,
+  CachedEntity,
+  buildSubscriberKey,
+  Instrument,
 } from '@novu/application-generic';
 import {
   JobEntity,
@@ -43,6 +39,7 @@ import {
   TenantEntity,
   TenantRepository,
 } from '@novu/dal';
+import { ExecuteOutput } from '@novu/framework/internal';
 
 import { SendMessageCommand } from './send-message.command';
 import { SendMessageDelay } from './send-message-delay.usecase';
@@ -52,13 +49,12 @@ import { SendMessageInApp } from './send-message-in-app.usecase';
 import { SendMessageChat } from './send-message-chat.usecase';
 import { SendMessagePush } from './send-message-push.usecase';
 import { Digest } from './digest';
-import { PlatformException } from '../../../shared/utils';
 import { ExecuteStepCustom } from './execute-step-custom.usecase';
+import { ExecuteBridgeJob } from '../execute-bridge-job';
+import { SendMessageResult } from './send-message-type.usecase';
 
 @Injectable()
 export class SendMessage {
-  private resonateUsecase: IUseCaseInterfaceInline;
-
   constructor(
     private sendMessageEmail: SendMessageEmail,
     private sendMessageSms: SendMessageSms,
@@ -66,9 +62,8 @@ export class SendMessage {
     private sendMessageChat: SendMessageChat,
     private sendMessagePush: SendMessagePush,
     private digest: Digest,
-    private executionLogRoute: ExecutionLogRoute,
+    private createExecutionDetails: CreateExecutionDetails,
     private getSubscriberTemplatePreferenceUsecase: GetSubscriberTemplatePreference,
-    private getSubscriberGlobalPreferenceUsecase: GetSubscriberGlobalPreference,
     private notificationTemplateRepository: NotificationTemplateRepository,
     private jobRepository: JobRepository,
     private sendMessageDelay: SendMessageDelay,
@@ -78,13 +73,11 @@ export class SendMessage {
     private tenantRepository: TenantRepository,
     private analyticsService: AnalyticsService,
     private normalizeVariablesUsecase: NormalizeVariables,
-    protected moduleRef: ModuleRef
-  ) {
-    this.resonateUsecase = requireInject('resonate', this.moduleRef);
-  }
+    private executeBridgeJob: ExecuteBridgeJob
+  ) {}
 
   @InstrumentUsecase()
-  public async execute(command: SendMessageCommand): Promise<{ status: 'success' | 'canceled' }> {
+  public async execute(command: SendMessageCommand): Promise<SendMessageResult> {
     const payload = await this.buildCompileContext(command);
 
     const variables = await this.normalizeVariablesUsecase.execute(
@@ -101,44 +94,42 @@ export class SendMessage {
 
     const stepType = command.step?.template?.type;
 
-    let resonateResponse: ExecuteOutput<IBridgeChannelResponse> | null = null;
-    if (![StepTypeEnum.DIGEST, StepTypeEnum.DELAY, StepTypeEnum.TRIGGER].includes(stepType as any)) {
-      resonateResponse = await this.resonateUsecase.execute<
-        SendMessageCommand & { variables: IFilterVariables },
-        ExecuteOutput<IBridgeChannelResponse> | null
-      >({
+    let bridgeResponse: ExecuteOutput | null = null;
+    if (isChannelStep(stepType)) {
+      bridgeResponse = await this.executeBridgeJob.execute({
         ...command,
         variables,
       });
     }
-    const bridgeSkip = resonateResponse?.options?.skip;
-    const { filterResult, channelPreferenceResult } = await this.getStepExecutionHalt(bridgeSkip, command, variables);
+    const isBridgeSkipped = bridgeResponse?.options?.skip;
+    const { stepCondition, channelPreference } = await this.evaluateFilters(isBridgeSkipped, command, variables);
 
     if (!command.payload?.$on_boarding_trigger) {
-      this.sendProcessStepEvent(
-        command,
-        bridgeSkip,
-        filterResult,
-        channelPreferenceResult,
-        !!resonateResponse?.outputs
-      );
+      this.sendProcessStepEvent(command, isBridgeSkipped, stepCondition, channelPreference, !!bridgeResponse?.outputs);
     }
 
-    if (!filterResult?.passed || !channelPreferenceResult || bridgeSkip) {
+    if (!stepCondition?.passed || !channelPreference || isBridgeSkipped) {
       await this.jobRepository.updateStatus(command.environmentId, command.jobId, JobStatusEnum.CANCELED);
 
-      await this.executionLogRoute.execute(
-        ExecutionLogRouteCommand.create({
-          ...ExecutionLogRouteCommand.getDetailsFromJob(command.job),
+      await this.createExecutionDetails.execute(
+        CreateExecutionDetailsCommand.create({
+          ...CreateExecutionDetailsCommand.getDetailsFromJob(command.job),
           detail: DetailEnum.FILTER_STEPS,
           source: ExecutionDetailsSourceEnum.INTERNAL,
           status: ExecutionDetailsStatusEnum.SUCCESS,
           isTest: false,
           isRetry: false,
           raw: JSON.stringify({
-            ...(filterResult ? { filter: { conditions: filterResult?.conditions, passed: filterResult?.passed } } : {}),
-            ...(channelPreferenceResult ? { preferences: { passed: channelPreferenceResult } } : {}),
-            ...(bridgeSkip ? { skip: bridgeSkip } : {}),
+            ...(stepCondition
+              ? {
+                  filter: {
+                    conditions: stepCondition?.conditions,
+                    passed: stepCondition?.passed,
+                  },
+                }
+              : {}),
+            ...(channelPreference ? { preferences: { passed: channelPreference } } : {}),
+            ...(isBridgeSkipped ? { skip: isBridgeSkipped } : {}),
           }),
         })
       );
@@ -147,9 +138,9 @@ export class SendMessage {
     }
 
     if (stepType !== StepTypeEnum.DELAY) {
-      await this.executionLogRoute.execute(
-        ExecutionLogRouteCommand.create({
-          ...ExecutionLogRouteCommand.getDetailsFromJob(command.job),
+      await this.createExecutionDetails.execute(
+        CreateExecutionDetailsCommand.create({
+          ...CreateExecutionDetailsCommand.getDetailsFromJob(command.job),
           detail: stepType === StepTypeEnum.DIGEST ? DetailEnum.START_DIGESTING : DetailEnum.START_SENDING,
           source: ExecutionDetailsSourceEnum.INTERNAL,
           status: ExecutionDetailsStatusEnum.PENDING,
@@ -162,80 +153,67 @@ export class SendMessage {
     const sendMessageCommand = SendMessageCommand.create({
       ...command,
       compileContext: payload,
-      bridgeData: resonateResponse,
+      bridgeData: bridgeResponse,
     });
 
     switch (stepType) {
+      case StepTypeEnum.TRIGGER: {
+        return { status: 'success' };
+      }
       case StepTypeEnum.SMS: {
-        await this.sendMessageSms.execute(sendMessageCommand);
-        break;
+        return await this.sendMessageSms.execute(sendMessageCommand);
       }
       case StepTypeEnum.IN_APP: {
-        await this.sendMessageInApp.execute(sendMessageCommand);
-        break;
+        return await this.sendMessageInApp.execute(sendMessageCommand);
       }
       case StepTypeEnum.EMAIL: {
-        await this.sendMessageEmail.execute(sendMessageCommand);
-        break;
+        return await this.sendMessageEmail.execute(sendMessageCommand);
       }
       case StepTypeEnum.CHAT: {
-        await this.sendMessageChat.execute(sendMessageCommand);
-        break;
+        return await this.sendMessageChat.execute(sendMessageCommand);
       }
       case StepTypeEnum.PUSH: {
-        await this.sendMessagePush.execute(sendMessageCommand);
-        break;
+        return await this.sendMessagePush.execute(sendMessageCommand);
       }
       case StepTypeEnum.DIGEST: {
-        await this.digest.execute(command);
-        break;
+        return await this.digest.execute(command);
       }
       case StepTypeEnum.DELAY: {
-        await this.sendMessageDelay.execute(command);
-        break;
+        return await this.sendMessageDelay.execute(command);
       }
       case StepTypeEnum.CUSTOM: {
-        await this.executeStepCustom.execute(sendMessageCommand);
-        break;
+        return await this.executeStepCustom.execute(sendMessageCommand);
+      }
+      default: {
+        throw new Error(`Unsupported step type: ${stepType}`);
       }
     }
-
-    return { status: 'success' };
   }
 
-  private async getStepExecutionHalt(
+  private async evaluateFilters(
     bridgeSkip: boolean | undefined,
     command: SendMessageCommand,
     variables: IFilterVariables
-  ): Promise<{ filterResult: IConditionsFilterResponse | null; channelPreferenceResult: boolean | null }> {
-    const skipHalt = this.shouldSkipHalt(bridgeSkip, command.job?.step?.bridgeUrl);
-    if (skipHalt) {
-      return { filterResult: { passed: true, conditions: [], variables: {} }, channelPreferenceResult: true };
+  ): Promise<{
+    stepCondition: IConditionsFilterResponse | null;
+    channelPreference: boolean | null;
+  }> {
+    if (bridgeSkip === true) {
+      return {
+        stepCondition: { passed: true, conditions: [], variables: {} },
+        channelPreference: true,
+      };
     }
 
-    const [filterResult, channelPreferenceResult] = await Promise.all([
-      this.filter(command, variables),
-      this.filterPreferredChannels(command.job),
+    const [stepCondition, channelPreference] = await Promise.all([
+      this.evaluateStepCondition(command, variables),
+      this.evaluateChannelPreference(command),
     ]);
 
-    return { filterResult, channelPreferenceResult };
+    return { stepCondition, channelPreference };
   }
 
-  /**
-   * This function checks if a bridge skip is happening.
-   *
-   * - If `bridgeSkip` is true (highest priority), skips all checks.
-   * - If `bridgeUrl` is provided, skips all checks (use `skip` option in workflow definition instead).
-   *
-   * @param bridgeSkip Whether to skip bridge checks (optional).
-   * @param bridgeUrl URL of the bridge (optional).
-   * @return True if bridge skip is happening, false otherwise.
-   */
-  private shouldSkipHalt(bridgeSkip: boolean | undefined, bridgeUrl: string | undefined): boolean {
-    return bridgeSkip === true || !!bridgeUrl;
-  }
-
-  private async filter(command: SendMessageCommand, variables: IFilterVariables) {
+  private async evaluateStepCondition(command: SendMessageCommand, variables: IFilterVariables) {
     return await this.conditionsFilter.filter(
       ConditionsFilterCommand.create({
         filters: command.job.step.filters || [],
@@ -251,10 +229,10 @@ export class SendMessage {
 
   private sendProcessStepEvent(
     command: SendMessageCommand,
-    resonateSkip: boolean | undefined,
+    isBridgeSkipped: boolean | undefined,
     filterResult: IConditionsFilterResponse | null,
     preferredResult: boolean | null,
-    isEcho: boolean
+    isBridgeWorkflow: boolean
   ) {
     const usedFilters = filterResult?.conditions?.reduce(ConditionsFilter.sumFilters, {
       filters: [],
@@ -262,7 +240,8 @@ export class SendMessage {
       passedFilters: [],
     });
 
-    const digest = command.job.digest;
+    const { digest } = command.job;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let timedInfo: any = {};
 
     if (digest && digest.type === DigestTypeEnum.TIMED && digest.timed) {
@@ -280,7 +259,7 @@ export class SendMessage {
      * This is intentional, so that mixpanel can automatically reshard it.
      */
     this.analyticsService.mixpanelTrack('Process Workflow Step - [Triggers]', '', {
-      workflowType: isEcho ? 'ECHO' : 'REGULAR',
+      workflowType: isBridgeWorkflow ? WorkflowTypeEnum.BRIDGE : WorkflowTypeEnum.REGULAR,
       _template: command.job._templateId,
       _organization: command.organizationId,
       _environment: command.environmentId,
@@ -296,81 +275,87 @@ export class SendMessage {
       ...timedInfo,
       filterPassed: filterResult?.passed,
       preferencesPassed: preferredResult,
-      echoSkip: resonateSkip,
+      isBridgeSkipped,
       ...(usedFilters || {}),
       source: command.payload.__source || 'api',
     });
   }
 
   @Instrument()
-  private async filterPreferredChannels(job: JobEntity): Promise<boolean> {
-    const template = await this.getNotificationTemplate({
+  private async evaluateChannelPreference(command: SendMessageCommand): Promise<boolean> {
+    const { job } = command;
+
+    if (this.isActionStep(job)) {
+      return true;
+    }
+
+    const workflow = await this.getWorkflow({
       _id: job._templateId,
       environmentId: job._environmentId,
     });
-    if (!template) {
-      throw new PlatformException(`Notification template ${job._templateId} is not found`);
-    }
-
-    if (template.critical || this.isActionStep(job)) {
-      return true;
-    }
 
     const subscriber = await this.getSubscriberBySubscriberId({
       _environmentId: job._environmentId,
       subscriberId: job.subscriberId,
     });
-    if (!subscriber) throw new PlatformException('Subscriber not found with id ' + job._subscriberId);
+    if (!subscriber) throw new PlatformException(`Subscriber not found with id ${job._subscriberId}`);
 
-    const { preference: globalPreference } = await this.getSubscriberGlobalPreferenceUsecase.execute(
-      GetSubscriberGlobalPreferenceCommand.create({
-        organizationId: job._organizationId,
-        environmentId: job._environmentId,
-        subscriberId: job.subscriberId,
-      })
-    );
+    let subscriberPreference: { enabled: boolean; channels: IPreferenceChannels };
+    let subscriberPreferenceType: PreferencesTypeEnum;
+    if (command.statelessPreferences) {
+      /*
+       * Stateless Workflow executions do not have their definitions stored in the database.
+       * Their preferences are available in the command instead.
+       *
+       * TODO: Refactor the send-message flow to better handle stateless workflows
+       */
+      const workflowPreference = GetPreferences.mapWorkflowPreferencesToChannelPreferences(
+        command.statelessPreferences
+      );
+      subscriberPreference = {
+        enabled: true,
+        channels: workflowPreference,
+      };
+      subscriberPreferenceType = PreferencesTypeEnum.WORKFLOW_RESOURCE;
+    } else {
+      if (!workflow) {
+        throw new PlatformException(`Workflow with id '${job._templateId}' was not found`);
+      }
 
-    const globalPreferenceResult = this.stepPreferred(globalPreference, job);
-
-    if (!globalPreferenceResult) {
-      await this.executionLogRoute.execute(
-        ExecutionLogRouteCommand.create({
-          ...ExecutionLogRouteCommand.getDetailsFromJob(job),
-          detail: DetailEnum.STEP_FILTERED_BY_GLOBAL_PREFERENCES,
-          source: ExecutionDetailsSourceEnum.INTERNAL,
-          status: ExecutionDetailsStatusEnum.SUCCESS,
-          isTest: false,
-          isRetry: false,
-          raw: JSON.stringify(globalPreference),
+      const { preference, type } = await this.getSubscriberTemplatePreferenceUsecase.execute(
+        GetSubscriberTemplatePreferenceCommand.create({
+          organizationId: job._organizationId,
+          subscriberId: subscriber.subscriberId,
+          environmentId: job._environmentId,
+          template: workflow,
+          subscriber,
+          tenant: job.tenant,
+          includeInactiveChannels: false,
         })
       );
-
-      return false;
+      subscriberPreference = preference;
+      subscriberPreferenceType = type;
     }
 
-    const { preference } = await this.getSubscriberTemplatePreferenceUsecase.execute(
-      GetSubscriberTemplatePreferenceCommand.create({
-        organizationId: job._organizationId,
-        subscriberId: subscriber.subscriberId,
-        environmentId: job._environmentId,
-        template,
-        subscriber,
-        tenant: job.tenant,
-      })
-    );
+    const result = this.stepPreferred(subscriberPreference, job);
 
-    const result = this.stepPreferred(preference, job);
+    const preferenceDetailFromPreferenceType: Record<PreferencesTypeEnum, DetailEnum> = {
+      [PreferencesTypeEnum.WORKFLOW_RESOURCE]: DetailEnum.STEP_FILTERED_BY_WORKFLOW_RESOURCE_PREFERENCES,
+      [PreferencesTypeEnum.SUBSCRIBER_WORKFLOW]: DetailEnum.STEP_FILTERED_BY_SUBSCRIBER_WORKFLOW_PREFERENCES,
+      [PreferencesTypeEnum.SUBSCRIBER_GLOBAL]: DetailEnum.STEP_FILTERED_BY_SUBSCRIBER_GLOBAL_PREFERENCES,
+      [PreferencesTypeEnum.USER_WORKFLOW]: DetailEnum.STEP_FILTERED_BY_USER_WORKFLOW_PREFERENCES,
+    };
 
     if (!result) {
-      await this.executionLogRoute.execute(
-        ExecutionLogRouteCommand.create({
-          ...ExecutionLogRouteCommand.getDetailsFromJob(job),
-          detail: DetailEnum.STEP_FILTERED_BY_PREFERENCES,
+      await this.createExecutionDetails.execute(
+        CreateExecutionDetailsCommand.create({
+          ...CreateExecutionDetailsCommand.getDetailsFromJob(job),
+          detail: preferenceDetailFromPreferenceType[subscriberPreferenceType],
           source: ExecutionDetailsSourceEnum.INTERNAL,
           status: ExecutionDetailsStatusEnum.SUCCESS,
           isTest: false,
           isRetry: false,
-          raw: JSON.stringify(preference),
+          raw: JSON.stringify(subscriberPreference),
         })
       );
     }
@@ -408,14 +393,7 @@ export class SendMessage {
     };
   }
 
-  @CachedEntity({
-    builder: (command: { _id: string; environmentId: string }) =>
-      buildNotificationTemplateKey({
-        _environmentId: command.environmentId,
-        _id: command._id,
-      }),
-  })
-  private async getNotificationTemplate({ _id, environmentId }: { _id: string; environmentId: string }) {
+  private async getWorkflow({ _id, environmentId }: { _id: string; environmentId: string }) {
     return await this.notificationTemplateRepository.findById(_id, environmentId);
   }
 
@@ -441,13 +419,13 @@ export class SendMessage {
 
   @Instrument()
   private stepPreferred(preference: { enabled: boolean; channels: IPreferenceChannels }, job: JobEntity) {
-    const templatePreferred = preference.enabled;
+    const workflowPreferred = preference.enabled;
 
     const channelPreferred = Object.keys(preference.channels).some(
       (channelKey) => channelKey === job.type && preference.channels[job.type]
     );
 
-    return templatePreferred && channelPreferred;
+    return workflowPreferred && channelPreferred;
   }
 
   private isActionStep(job: JobEntity) {
@@ -457,9 +435,9 @@ export class SendMessage {
   }
 
   protected async sendSelectedTenantExecution(job: JobEntity, tenant: TenantEntity) {
-    await this.executionLogRoute.execute(
-      ExecutionLogRouteCommand.create({
-        ...ExecutionLogRouteCommand.getDetailsFromJob(job),
+    await this.createExecutionDetails.execute(
+      CreateExecutionDetailsCommand.create({
+        ...CreateExecutionDetailsCommand.getDetailsFromJob(job),
         detail: DetailEnum.TENANT_CONTEXT_SELECTED,
         source: ExecutionDetailsSourceEnum.INTERNAL,
         status: ExecutionDetailsStatusEnum.PENDING,
@@ -488,16 +466,16 @@ export class SendMessage {
         identifier: tenantIdentifier,
       });
       if (!tenant) {
-        await this.executionLogRoute.execute(
-          ExecutionLogRouteCommand.create({
-            ...ExecutionLogRouteCommand.getDetailsFromJob(job),
+        await this.createExecutionDetails.execute(
+          CreateExecutionDetailsCommand.create({
+            ...CreateExecutionDetailsCommand.getDetailsFromJob(job),
             detail: DetailEnum.TENANT_NOT_FOUND,
             source: ExecutionDetailsSourceEnum.INTERNAL,
             status: ExecutionDetailsStatusEnum.FAILED,
             isTest: false,
             isRetry: false,
             raw: JSON.stringify({
-              tenantIdentifier: tenantIdentifier,
+              tenantIdentifier,
             }),
           })
         );
@@ -509,4 +487,8 @@ export class SendMessage {
 
     return tenant;
   }
+}
+
+function isChannelStep(stepType: StepTypeEnum | undefined) {
+  return ![StepTypeEnum.DIGEST, StepTypeEnum.DELAY, StepTypeEnum.TRIGGER].includes(stepType as StepTypeEnum);
 }

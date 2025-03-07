@@ -1,11 +1,12 @@
 import {
   AddressingTypeEnum,
+  StatelessControls,
   TriggerRecipientsPayload,
   TriggerRecipientSubscriber,
   TriggerRequestCategoryEnum,
   TriggerTenantContext,
 } from '@novu/shared';
-import { DiscoverWorkflowOutput } from '@novu/framework';
+import { DiscoverWorkflowOutput } from '@novu/framework/internal';
 import {
   IBulkJobParams,
   IJobParams,
@@ -35,6 +36,7 @@ export type IWorkflowDataDto = {
   requestCategory?: TriggerRequestCategoryEnum;
   bridgeUrl?: string;
   bridgeWorkflow?: DiscoverWorkflowOutput;
+  controls?: StatelessControls;
 } & Addressing;
 
 export interface IWorkflowJobDto extends IJobParams {

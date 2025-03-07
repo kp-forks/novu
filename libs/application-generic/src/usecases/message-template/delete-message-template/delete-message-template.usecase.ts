@@ -4,7 +4,7 @@ import {
   DalException,
   MessageTemplateRepository,
 } from '@novu/dal';
-import { ChangeEntityTypeEnum, WorkflowTypeEnum } from '@novu/shared';
+import { ChangeEntityTypeEnum, isBridgeWorkflow } from '@novu/shared';
 
 import { DeleteMessageTemplateCommand } from './delete-message-template.command';
 import { CreateChange, CreateChangeCommand } from '../../create-change';
@@ -15,7 +15,7 @@ export class DeleteMessageTemplate {
   constructor(
     private messageTemplateRepository: MessageTemplateRepository,
     private createChange: CreateChange,
-    private changeRepository: ChangeRepository
+    private changeRepository: ChangeRepository,
   ) {}
 
   async execute(command: DeleteMessageTemplateCommand): Promise<boolean> {
@@ -28,7 +28,7 @@ export class DeleteMessageTemplate {
       const changeId = await this.changeRepository.getChangeId(
         command.environmentId,
         ChangeEntityTypeEnum.MESSAGE_TEMPLATE,
-        command.messageTemplateId
+        command.messageTemplateId,
       );
 
       const deletedMessageTemplate =
@@ -37,7 +37,7 @@ export class DeleteMessageTemplate {
           _id: command.messageTemplateId,
         });
 
-      if (command.workflowType !== WorkflowTypeEnum.ECHO) {
+      if (!isBridgeWorkflow(command.workflowType)) {
         await this.createChange.execute(
           CreateChangeCommand.create({
             changeId,
@@ -47,7 +47,7 @@ export class DeleteMessageTemplate {
             item: deletedMessageTemplate[0],
             type: ChangeEntityTypeEnum.MESSAGE_TEMPLATE,
             parentChangeId: command.parentChangeId,
-          })
+          }),
         );
       }
 
