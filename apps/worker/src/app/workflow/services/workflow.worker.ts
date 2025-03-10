@@ -1,20 +1,21 @@
 import { Injectable, Logger } from '@nestjs/common';
-const nr = require('newrelic');
 import {
+  BullMqService,
   getWorkflowWorkerOptions,
+  IWorkflowDataDto,
   PinoLogger,
   storage,
   Store,
   TriggerEvent,
-  TriggerEventCommand,
-  WorkflowWorkerService,
   WorkerOptions,
   WorkerProcessor,
-  BullMqService,
   WorkflowInMemoryProviderService,
-  IWorkflowDataDto,
+  WorkflowWorkerService,
 } from '@novu/application-generic';
+import { CommunityOrganizationRepository } from '@novu/dal';
 import { ObservabilityBackgroundTransactionEnum } from '@novu/shared';
+
+const nr = require('newrelic');
 
 const LOG_CONTEXT = 'WorkflowWorker';
 
@@ -22,7 +23,9 @@ const LOG_CONTEXT = 'WorkflowWorker';
 export class WorkflowWorker extends WorkflowWorkerService {
   constructor(
     private triggerEventUsecase: TriggerEvent,
-    public workflowInMemoryProviderService: WorkflowInMemoryProviderService
+    public workflowInMemoryProviderService: WorkflowInMemoryProviderService,
+    private organizationRepository: CommunityOrganizationRepository,
+    private logger: PinoLogger
   ) {
     super(new BullMqService(workflowInMemoryProviderService));
 
@@ -35,8 +38,15 @@ export class WorkflowWorker extends WorkflowWorkerService {
 
   private getWorkerProcessor(): WorkerProcessor {
     return async ({ data }: { data: IWorkflowDataDto }) => {
-      return await new Promise(async (resolve, reject) => {
-        // eslint-disable-next-line @typescript-eslint/no-this-alias
+      const organizationExists = await this.organizationExist(data);
+
+      if (!organizationExists) {
+        Logger.log(`Organization not found for organizationId ${data.organizationId}. Skipping job.`, LOG_CONTEXT);
+
+        return;
+      }
+
+      return await new Promise((resolve, reject) => {
         const _this = this;
 
         Logger.verbose(`Job ${data.identifier} is being processed in the new instance workflow worker`, LOG_CONTEXT);
@@ -44,7 +54,7 @@ export class WorkflowWorker extends WorkflowWorkerService {
         nr.startBackgroundTransaction(
           ObservabilityBackgroundTransactionEnum.TRIGGER_HANDLER_QUEUE,
           'Trigger Engine',
-          function () {
+          function processTask() {
             const transaction = nr.getTransaction();
 
             storage.run(new Store(PinoLogger.root), () => {
@@ -63,5 +73,13 @@ export class WorkflowWorker extends WorkflowWorkerService {
         );
       });
     };
+  }
+
+  private async organizationExist(data: IWorkflowDataDto): Promise<boolean> {
+    const { organizationId } = data;
+
+    const organization = await this.organizationRepository.findOne({ _id: organizationId });
+
+    return !!organization;
   }
 }

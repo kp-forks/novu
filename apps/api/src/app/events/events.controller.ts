@@ -26,7 +26,12 @@ import { SendTestEmail, SendTestEmailCommand } from './usecases/send-test-email'
 
 import { UserSession } from '../shared/framework/user.decorator';
 import { ExternalApiAccessible } from '../auth/framework/external-api.decorator';
-import { ApiCommonResponses, ApiOkResponse, ApiResponse } from '../shared/framework/response.decorator';
+import {
+  ApiCommonResponses,
+  ApiCreatedResponse,
+  ApiOkResponse,
+  ApiResponse,
+} from '../shared/framework/response.decorator';
 import { DataBooleanDto } from '../shared/dtos/data-wrapper-dto';
 import { ThrottlerCategory, ThrottlerCost } from '../rate-limiting/guards';
 import { UserAuthentication } from '../shared/framework/swagger/api.key.security';
@@ -83,6 +88,7 @@ export class EventsController {
         addressingType: AddressingTypeEnum.MULTICAST,
         requestCategory: TriggerRequestCategoryEnum.SINGLE,
         bridgeUrl: body.bridgeUrl,
+        controls: body.controls,
       })
     );
 
@@ -94,6 +100,8 @@ export class EventsController {
   @ThrottlerCost(ApiRateLimitCostEnum.BULK)
   @Post('/trigger/bulk')
   @SdkMethodName('triggerBulk')
+  @SdkUsageExample('Trigger Notification Events in Bulk')
+  @SdkGroupName('')
   @ApiResponse(TriggerEventResponseDto, 201, true)
   @ApiOperation({
     summary: 'Bulk trigger event',
@@ -122,10 +130,16 @@ export class EventsController {
   @Post('/trigger/broadcast')
   @ApiResponse(TriggerEventResponseDto)
   @SdkMethodName('triggerBroadcast')
+  @SdkUsageExample('Broadcast Event to All')
+  @SdkGroupName('')
   @ApiOperation({
     summary: 'Broadcast event to all',
     description: `Trigger a broadcast event to all existing subscribers, could be used to send announcements, etc.
       In the future could be used to trigger events to a subset of subscribers based on defined filters.`,
+  })
+  @ApiCreatedResponse({
+    description: 'Broadcast request has been registered successfully ',
+    type: TriggerEventResponseDto, // Specify the response type
   })
   async broadcastEventToAll(
     @UserSession() user: UserSessionData,
@@ -167,8 +181,7 @@ export class EventsController {
         workflowId: body.workflowId,
         stepId: body.stepId,
         bridge: body.bridge,
-        inputs: body.controls || body.inputs,
-        controls: body.controls || body.inputs,
+        controls: body.controls,
       })
     );
   }
@@ -187,6 +200,8 @@ export class EventsController {
     `,
   })
   @SdkMethodName('cancel')
+  @SdkUsageExample('Cancel Triggered Event')
+  @SdkGroupName('')
   async cancel(@UserSession() user: UserSessionData, @Param('transactionId') transactionId: string): Promise<boolean> {
     return await this.cancelDelayedUsecase.execute(
       CancelDelayedCommand.create({

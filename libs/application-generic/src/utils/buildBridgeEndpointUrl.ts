@@ -6,14 +6,14 @@ import { createHash } from 'crypto';
  */
 export const buildBridgeEndpointUrl = (
   apiKey: string,
-  baseAddress: string
+  baseAddress: string,
 ): string => {
   return `${buildBridgeSubdomain(apiKey)}.${baseAddress}`;
 };
 
 /*
  * Creates a bridge subdomain based on the apiKey provided. This function is used in several
- * places, including packages/create-novu-app/templates/index.ts when generating the
+ * places, including packages/novu/src/commands/init/templates/index.ts when generating the
  * subdomain in the bridge application. Developers should take care to keep changes
  * in sync.
  */

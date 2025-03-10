@@ -6,6 +6,7 @@ import { faker } from '@faker-js/faker';
 import { setTimeout } from 'timers/promises';
 
 import {
+  CommunityOrganizationRepository,
   EnvironmentEntity,
   JobEntity,
   JobRepository,
@@ -27,18 +28,12 @@ import {
   UserService,
   JobsService,
 } from '@novu/testing';
-import { BullMqService, StandardQueueService, WorkflowInMemoryProviderService } from '@novu/application-generic';
+import { StandardQueueService, WorkflowInMemoryProviderService } from '@novu/application-generic';
 
 import { StandardWorker } from './standard.worker';
 
 import { WorkflowModule } from '../workflow.module';
-import {
-  HandleLastFailedJob,
-  RunJob,
-  SetJobAsCompleted,
-  SetJobAsFailed,
-  WebhookFilterBackoffStrategy,
-} from '../usecases';
+import { HandleLastFailedJob, RunJob, SetJobAsFailed, WebhookFilterBackoffStrategy } from '../usecases';
 import { SharedModule } from '../../shared/shared.module';
 
 let standardQueueService: StandardQueueService;
@@ -46,6 +41,7 @@ let standardWorker: StandardWorker;
 
 describe('Standard Worker', () => {
   let jobRepository: JobRepository;
+  let notificationRepository: NotificationRepository;
   let organization: OrganizationEntity;
   let environment: EnvironmentEntity;
   let user: UserEntity;
@@ -62,10 +58,10 @@ describe('Standard Worker', () => {
     process.env.IS_IN_MEMORY_CLUSTER_MODE_ENABLED = 'false';
 
     jobRepository = new JobRepository();
-
+    notificationRepository = new NotificationRepository();
     jobsService = new JobsService();
-
     const userService = new UserService();
+
     const card = {
       firstName: faker.name.firstName(),
       lastName: faker.name.lastName(),
@@ -109,20 +105,21 @@ describe('Standard Worker', () => {
 
     const handleLastFailedJob = moduleRef.get<HandleLastFailedJob>(HandleLastFailedJob);
     const runJob = moduleRef.get<RunJob>(RunJob);
-    const setJobAsCompleted = moduleRef.get<SetJobAsCompleted>(SetJobAsCompleted);
     const setJobAsFailed = moduleRef.get<SetJobAsFailed>(SetJobAsFailed);
     const webhookFilterBackoffStrategy = moduleRef.get<WebhookFilterBackoffStrategy>(WebhookFilterBackoffStrategy);
     const workflowInMemoryProviderService = moduleRef.get<WorkflowInMemoryProviderService>(
       WorkflowInMemoryProviderService
     );
+    const organizationRepository = moduleRef.get<CommunityOrganizationRepository>(CommunityOrganizationRepository);
 
     standardWorker = new StandardWorker(
       handleLastFailedJob,
       runJob,
-      setJobAsCompleted,
       setJobAsFailed,
       webhookFilterBackoffStrategy,
-      workflowInMemoryProviderService
+      workflowInMemoryProviderService,
+      organizationRepository,
+      jobRepository
     );
   });
 
@@ -136,7 +133,7 @@ describe('Standard Worker', () => {
 
     expect(standardWorker.DEFAULT_ATTEMPTS).to.eql(3);
     expect(standardWorker.worker).to.deep.include({
-      _eventsCount: 1,
+      _eventsCount: 2,
       _maxListeners: undefined,
       name: 'standard',
     });
@@ -159,7 +156,15 @@ describe('Standard Worker', () => {
 
     const transactionId = uuid();
     const _environmentId = environment._id;
-    const _notificationId = NotificationRepository.createObjectId();
+    const notification = await notificationRepository.create({
+      _environmentId,
+      _organizationId: organization._id,
+      _subscriberId: subscriber._id,
+      _templateId: template._id,
+      _userId: user._id,
+      tags: [],
+    });
+    const _notificationId = notification._id;
     const _organizationId = organization._id;
     const _subscriberId = subscriber._id;
     const _templateId = template._id;
@@ -207,13 +212,12 @@ describe('Standard Worker', () => {
 
     await standardQueueService.add({ name: jobCreated._id, data: jobData, groupId: '0' });
 
-    await jobsService.awaitRunningJobs({
+    await jobsService.waitForJobCompletion({
       templateId: _templateId,
       organizationId: organization._id,
-      delay: false,
     });
 
-    const jobs = await jobRepository.find({ _environmentId, _organizationId });
+    const jobs = await jobRepository.find({ _environmentId, _organizationId, _notificationId });
     expect(jobs.length).to.equal(1);
 
     expect(jobs[0].status).to.eql(JobStatusEnum.COMPLETED);
@@ -270,10 +274,9 @@ describe('Standard Worker', () => {
 
     await standardQueueService.add({ name: jobCreated._id, data: jobData, groupId: '0' });
 
-    await jobsService.awaitRunningJobs({
+    await jobsService.waitForJobCompletion({
       templateId: _templateId,
       organizationId: organization._id,
-      delay: false,
     });
 
     /**
@@ -287,13 +290,14 @@ describe('Standard Worker', () => {
       failedTrigger = await jobRepository.findOne({
         _environmentId,
         _organizationId,
+        _notificationId,
         status: JobStatusEnum.FAILED,
         type: StepTypeEnum.TRIGGER,
       });
     } while (!failedTrigger || !failedTrigger.error);
 
     expect(failedTrigger.error).to.deep.include({
-      message: `Notification template ${_templateId} is not found`,
+      message: `Notification with id ${_notificationId} not found`,
     });
   });
 

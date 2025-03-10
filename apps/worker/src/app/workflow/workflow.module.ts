@@ -1,34 +1,43 @@
-import { DynamicModule, Logger, Module, Provider, OnApplicationShutdown } from '@nestjs/common';
+/* eslint-disable global-require */
+import { DynamicModule, Logger, Module, OnApplicationShutdown, Provider } from '@nestjs/common';
 import {
   BulkCreateExecutionDetails,
   CalculateLimitNovuIntegration,
   CompileEmailTemplate,
+  CompileInAppTemplate,
   CompileTemplate,
+  ConditionsFilter,
   CreateExecutionDetails,
   GetDecryptedIntegrations,
   GetLayoutUseCase,
   GetNovuLayout,
   GetNovuProviderCredentials,
-  GetSubscriberPreference,
-  GetSubscriberGlobalPreference,
+  GetPreferences,
   GetSubscriberTemplatePreference,
+  GetTopicSubscribersUseCase,
+  NormalizeVariables,
   ProcessTenant,
   SelectIntegration,
-  ConditionsFilter,
-  NormalizeVariables,
-  TriggerEvent,
   SelectVariant,
-  GetTopicSubscribersUseCase,
-  getFeatureFlag,
+  TierRestrictionsValidateUsecase,
   TriggerBroadcast,
+  TriggerEvent,
   TriggerMulticast,
-  CompileInAppTemplate,
   WorkflowInMemoryProviderService,
-  ExecutionLogRoute,
 } from '@novu/application-generic';
-import { JobRepository } from '@novu/dal';
+import { CommunityOrganizationRepository, JobRepository, PreferencesRepository } from '@novu/dal';
 
+import { Type } from '@nestjs/common/interfaces/type.interface';
+import { ForwardReference } from '@nestjs/common/interfaces/modules/forward-reference.interface';
+import { JobTopicNameEnum } from '@novu/shared';
 import {
+  Digest,
+  ExecuteBridgeJob,
+  GetDigestEventsBackoff,
+  GetDigestEventsRegular,
+  HandleLastFailedJob,
+  QueueNextJob,
+  RunJob,
   SendMessage,
   SendMessageChat,
   SendMessageDelay,
@@ -36,12 +45,6 @@ import {
   SendMessageInApp,
   SendMessagePush,
   SendMessageSms,
-  Digest,
-  GetDigestEventsBackoff,
-  GetDigestEventsRegular,
-  HandleLastFailedJob,
-  QueueNextJob,
-  RunJob,
   SetJobAsCompleted,
   SetJobAsFailed,
   UpdateJobStatus,
@@ -50,10 +53,7 @@ import {
 
 import { SharedModule } from '../shared/shared.module';
 import { ACTIVE_WORKERS, workersToProcess } from '../../config/worker-init.config';
-import { Type } from '@nestjs/common/interfaces/type.interface';
-import { ForwardReference } from '@nestjs/common/interfaces/modules/forward-reference.interface';
 import { InboundEmailParse } from './usecases/inbound-email-parse/inbound-email-parse.usecase';
-import { JobTopicNameEnum } from '@novu/shared';
 import { ExecuteStepCustom } from './usecases/send-message/execute-step-custom.usecase';
 import { AddDelayJob, AddJob, MergeOrCreateDigest } from './usecases/add-job';
 import { StoreSubscriberJobs } from './usecases/store-subscriber-jobs';
@@ -74,12 +74,6 @@ const enterpriseImports = (): Array<Type | DynamicModule | Promise<DynamicModule
         const activeWorkers = workersToProcess.length ? workersToProcess : Object.values(JobTopicNameEnum);
         modules.push(require('@novu/ee-billing')?.BillingModule.forRoot(activeWorkers));
       }
-
-      if (require('@novu/ee-echo-worker')?.EchoGatewayModule) {
-        Logger.log('Importing enterprise bridge connector module', 'EnterpriseImport');
-
-        modules.push(require('@novu/ee-echo-worker')?.EchoGatewayModule);
-      }
     }
   } catch (e) {
     Logger.error(e, `Unexpected error while importing enterprise modules`, 'EnterpriseImport');
@@ -87,10 +81,11 @@ const enterpriseImports = (): Array<Type | DynamicModule | Promise<DynamicModule
 
   return modules;
 };
-const REPOSITORIES = [JobRepository];
+const REPOSITORIES = [JobRepository, CommunityOrganizationRepository, PreferencesRepository];
 
 const USE_CASES = [
   AddDelayJob,
+  TierRestrictionsValidateUsecase,
   MergeOrCreateDigest,
   AddJob,
   CalculateLimitNovuIntegration,
@@ -109,8 +104,6 @@ const USE_CASES = [
   GetNovuProviderCredentials,
   SelectIntegration,
   SelectVariant,
-  GetSubscriberPreference,
-  GetSubscriberGlobalPreference,
   GetSubscriberTemplatePreference,
   HandleLastFailedJob,
   ProcessTenant,
@@ -131,13 +124,13 @@ const USE_CASES = [
   UpdateJobStatus,
   WebhookFilterBackoffStrategy,
   GetTopicSubscribersUseCase,
-  getFeatureFlag,
   SubscriberJobBound,
   TriggerBroadcast,
   TriggerMulticast,
   CompileInAppTemplate,
   InboundEmailParse,
-  ExecutionLogRoute,
+  ExecuteBridgeJob,
+  GetPreferences,
 ];
 
 const PROVIDERS: Provider[] = [];

@@ -1,2 +1,4 @@
+export type { EventHandler, Events, SocketEventNames } from './event-emitter';
 export { Novu } from './novu';
-export { InboxUI } from './ui';
+export * from './types';
+export { areTagsEqual, isSameFilter } from './utils/notification-utils';

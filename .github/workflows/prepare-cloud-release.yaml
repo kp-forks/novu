@@ -1,11 +1,14 @@
-name: "Prepare Cloud Release"
+name: 'Prepare Cloud Release'
+
+env:
+  NX_CLOUD_ACCESS_TOKEN: ${{ secrets.NX_CLOUD_ACCESS_TOKEN }}
 
 on:
   workflow_dispatch:
   # Triggers the workflow every work day at 8:00 UTC
   # The 3 hour offset should change when daylight savings change for GMT +3.
   schedule:
-    - cron: "0 8 * * 1,2,3,4,5"
+    - cron: '0 8 * * 1,2,3,4,5'
 
 jobs:
   prepare-cloud-release:
@@ -35,7 +38,7 @@ jobs:
       - name: Create Novu Cloud release PR
         id: create-pr
         run: |
-          echo "pr_url=$(gh pr create --base prod --head ${{steps.output-variables.outputs.branch_name}} --title 'Release ${{steps.output-variables.outputs.date_humanized}}' --body 'Automated daily production Novu Cloud release')" >> "$GITHUB_OUTPUT"
+          echo "pr_url=$(gh pr create --base prod --head ${{steps.output-variables.outputs.branch_name}} --title 'chore(root): Release ${{steps.output-variables.outputs.date_humanized}}' --body 'Automated daily production Novu Cloud release')" >> "$GITHUB_OUTPUT"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -43,7 +46,7 @@ jobs:
         id: enable-pr-automerge
         if: ${{ steps.create-pr.outputs.pr_url != '' }}
         run: |
-          gh pr merge --auto -r ${{steps.create-pr.outputs.pr_url}}
+          gh pr merge --auto -m ${{steps.create-pr.outputs.pr_url}}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -57,24 +60,24 @@ jobs:
         id: commit-log
         if: ${{ success() }}
         run: |
-          echo 'COMMIT_LOG<<EOF' >> $GITHUB_ENV
-          echo $(git log --format="format:%h %s (@%aL)\n" origin/prod..origin/${{steps.output-variables.outputs.branch_name}} | sed "s/\"/'/g") >> $GITHUB_ENV
-          echo 'EOF' >> $GITHUB_ENV
+          echo 'commit_log<<EOF' >> $GITHUB_OUTPUT
+          echo $(git log --format="format:%h %s (@%aL)\n" origin/prod..origin/${{steps.output-variables.outputs.branch_name}} | sed "s/\"/'/g") >> $GITHUB_OUTPUT
+          echo 'EOF' >> $GITHUB_OUTPUT
 
       - name: Send commit log to Slack
         id: slack
         uses: slackapi/slack-github-action@v1.26.0
-        if: ${{ success() }}
+        if: ${{ success() && steps.commit-log.outputs.commit_log != '' }}
         with:
           payload: |
             {
-              "text": "*<${{steps.create-pr.outputs.pr_url}}|Novu Cloud Release: ${{steps.output-variables.outputs.date_humanized }}>*\n```${{env.COMMIT_LOG}}```",
+              "text": "*<${{steps.create-pr.outputs.pr_url}}|Novu Cloud Release: ${{steps.output-variables.outputs.date_humanized }}>*\n```${{steps.commit-log.outputs.commit_log}}```",
               "blocks": [
                 {
                   "type": "section",
                   "text": {
                     "type": "mrkdwn",
-                    "text": "*<${{steps.create-pr.outputs.pr_url}}|Novu Cloud Release: ${{steps.output-variables.outputs.date_humanized }}>*\n```${{env.COMMIT_LOG}}```"
+                    "text": "*<${{steps.create-pr.outputs.pr_url}}|Novu Cloud Release: ${{steps.output-variables.outputs.date_humanized }}>*\n```${{steps.commit-log.outputs.commit_log}}```"
                   }
                 }
               ]

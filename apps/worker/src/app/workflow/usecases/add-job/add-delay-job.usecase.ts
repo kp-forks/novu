@@ -1,13 +1,13 @@
 import { forwardRef, Inject, Injectable } from '@nestjs/common';
 
 import { JobRepository, JobStatusEnum } from '@novu/dal';
-import { DelayTypeEnum, ExecutionDetailsSourceEnum, ExecutionDetailsStatusEnum, StepTypeEnum } from '@novu/shared';
+import { ExecutionDetailsSourceEnum, ExecutionDetailsStatusEnum, StepTypeEnum } from '@novu/shared';
 import {
   ApiException,
   ComputeJobWaitDurationService,
   DetailEnum,
-  ExecutionLogRoute,
-  ExecutionLogRouteCommand,
+  CreateExecutionDetails,
+  CreateExecutionDetailsCommand,
   InstrumentUsecase,
 } from '@novu/application-generic';
 
@@ -19,8 +19,8 @@ export class AddDelayJob {
     private jobRepository: JobRepository,
     @Inject(forwardRef(() => ComputeJobWaitDurationService))
     private computeJobWaitDurationService: ComputeJobWaitDurationService,
-    @Inject(forwardRef(() => ExecutionLogRoute))
-    private executionLogRoute: ExecutionLogRoute
+    @Inject(forwardRef(() => CreateExecutionDetails))
+    private createExecutionDetails: CreateExecutionDetails
   ) {}
 
   @InstrumentUsecase()
@@ -39,16 +39,16 @@ export class AddDelayJob {
 
     try {
       delay = this.computeJobWaitDurationService.calculateDelay({
-        stepMetadata: data.step.bridgeUrl ? data.digest : data.step.metadata,
+        stepMetadata: data.step.metadata,
         payload: data.payload,
         overrides: data.overrides,
       });
 
       await this.jobRepository.updateStatus(command.environmentId, data._id, JobStatusEnum.DELAYED);
     } catch (error: any) {
-      await this.executionLogRoute.execute(
-        ExecutionLogRouteCommand.create({
-          ...ExecutionLogRouteCommand.getDetailsFromJob(command.job),
+      await this.createExecutionDetails.execute(
+        CreateExecutionDetailsCommand.create({
+          ...CreateExecutionDetailsCommand.getDetailsFromJob(command.job),
           detail: DetailEnum.DELAY_MISCONFIGURATION,
           source: ExecutionDetailsSourceEnum.INTERNAL,
           status: ExecutionDetailsStatusEnum.FAILED,
