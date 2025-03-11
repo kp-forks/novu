@@ -8,7 +8,6 @@ import { API_HOSTNAME, WEBSOCKET_HOSTNAME } from '../../config';
 import { useNavigate } from 'react-router-dom';
 import { useFeatureFlag } from '@/hooks/use-feature-flag';
 import { FeatureFlagsKeysEnum } from '@novu/shared';
-import { borderRadii } from 'tailwind.config';
 
 interface InboxPreviewContentProps {
   selectedStyle: string;
