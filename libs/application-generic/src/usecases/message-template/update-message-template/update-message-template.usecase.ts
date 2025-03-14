@@ -1,16 +1,7 @@
-import {
-  BadRequestException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 
-import {
-  ChangeRepository,
-  MessageTemplateEntity,
-  MessageTemplateRepository,
-  MessageRepository,
-} from '@novu/dal';
-import { ChangeEntityTypeEnum, WorkflowTypeEnum } from '@novu/shared';
+import { ChangeRepository, MessageTemplateEntity, MessageTemplateRepository, MessageRepository } from '@novu/dal';
+import { ChangeEntityTypeEnum, isBridgeWorkflow, StepTypeEnum } from '@novu/shared';
 
 import { UpdateMessageTemplateCommand } from './update-message-template.command';
 import { CreateChange, CreateChangeCommand } from '../../create-change';
@@ -28,33 +19,26 @@ export class UpdateMessageTemplate {
     private updateChange: UpdateChange
   ) {}
 
-  async execute(
-    command: UpdateMessageTemplateCommand
-  ): Promise<MessageTemplateEntity> {
+  async execute(command: UpdateMessageTemplateCommand): Promise<MessageTemplateEntity> {
     const existingTemplate = await this.messageTemplateRepository.findOne({
       _id: command.templateId,
       _environmentId: command.environmentId,
     });
     if (!existingTemplate) {
-      throw new NotFoundException(
-        `Message template with id ${command.templateId} not found`
-      );
+      throw new NotFoundException(`Message template with id ${command.templateId} not found`);
     }
 
     const updatePayload: Partial<MessageTemplateEntity> = {};
 
-    const unsetPayload: Partial<Record<keyof MessageTemplateEntity, string>> =
-      {};
+    const unsetPayload: Partial<Record<keyof MessageTemplateEntity, string>> = {};
 
     if (command.name) {
       updatePayload.name = command.name;
     }
 
     if (command.content !== null || command.content !== undefined) {
-      updatePayload.content =
-        command.content && command.contentType === 'editor'
-          ? sanitizeMessageContent(command.content)
-          : command.content;
+      const shouldSanitize = command.contentType === 'editor' && command.type !== StepTypeEnum.CHAT;
+      updatePayload.content = shouldSanitize ? sanitizeMessageContent(command.content) : command.content;
     }
 
     if (command.variables) {
@@ -106,11 +90,8 @@ export class UpdateMessageTemplate {
       updatePayload.actor = command.actor;
     }
 
-    if (command.inputs) {
-      updatePayload.inputs = command.controls || command.inputs;
-    }
     if (command.controls) {
-      updatePayload.controls = command.controls || command.inputs;
+      updatePayload.controls = command.controls;
     }
 
     if (command.output) {
@@ -141,10 +122,7 @@ export class UpdateMessageTemplate {
       _id: command.templateId,
       _organizationId: command.organizationId,
     });
-    if (!item)
-      throw new NotFoundException(
-        `Message template with id ${command.templateId} is not found`
-      );
+    if (!item) throw new NotFoundException(`Message template with id ${command.templateId} is not found`);
 
     if (command.feedId || (!command.feedId && existingTemplate._feedId)) {
       await this.messageRepository.updateFeedByMessageTemplateId(
@@ -160,7 +138,7 @@ export class UpdateMessageTemplate {
         ChangeEntityTypeEnum.MESSAGE_TEMPLATE,
         item._id
       );
-      if (command.workflowType !== WorkflowTypeEnum.ECHO) {
+      if (!isBridgeWorkflow(command.workflowType)) {
         await this.createChange.execute(
           CreateChangeCommand.create({
             organizationId: command.organizationId,

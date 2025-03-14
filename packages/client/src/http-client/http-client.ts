@@ -1,10 +1,10 @@
-import { ApiOptions } from '..';
 import type { CustomDataType } from '@novu/shared';
+import { ApiOptions } from '..';
 
 const DEFAULT_API_VERSION = 'v1';
 const DEFAULT_BACKEND_URL = 'https://api.novu.co';
 const PACKAGE_NAME = '@novu/client';
-const PACKAGE_VERSION = '0.42.0';
+const PACKAGE_VERSION = '2.0.0-canary.0';
 const DEFAULT_USER_AGENT = `${PACKAGE_NAME}-${PACKAGE_VERSION}`;
 
 export class HttpClient {
@@ -33,6 +33,13 @@ export class HttpClient {
     delete this.headers.Authorization;
   }
 
+  updateHeaders(headers: Record<string, string>) {
+    this.headers = {
+      ...this.headers,
+      ...headers,
+    };
+  }
+
   async getFullResponse(url: string, params?: CustomDataType) {
     const response = await this.doFetch(url + this.getQueryString(params));
 
@@ -51,6 +58,11 @@ export class HttpClient {
       method: 'POST',
       body: JSON.stringify(body),
     });
+    const hasEmptyResponse = this.checkEmptyResponse(response);
+    if (hasEmptyResponse) {
+      return;
+    }
+
     const data = await response.json();
 
     return data.data;
@@ -61,6 +73,11 @@ export class HttpClient {
       method: 'PATCH',
       body: JSON.stringify(body),
     });
+    const hasEmptyResponse = this.checkEmptyResponse(response);
+    if (hasEmptyResponse) {
+      return;
+    }
+
     const data = await response.json();
 
     return data.data;
@@ -71,6 +88,11 @@ export class HttpClient {
       method: 'DELETE',
       body: JSON.stringify(body),
     });
+    const hasEmptyResponse = this.checkEmptyResponse(response);
+    if (hasEmptyResponse) {
+      return;
+    }
+
     const data = await response.json();
 
     return data.data;
@@ -81,29 +103,33 @@ export class HttpClient {
 
     const queryString = new URLSearchParams(params as any);
 
-    return '?' + queryString.toString();
+    return `?${queryString.toString()}`;
   }
 
   private async doFetch(url: string, options: RequestInit = {}) {
-    try {
-      const response = await fetch(this.backendUrl + url, {
-        ...options,
-        headers: this.headers,
-      });
-      await this.checkResponseStatus(response);
+    const response = await fetch(this.backendUrl + url, {
+      ...options,
+      headers: this.headers,
+    });
+    await this.checkResponseStatus(response);
 
-      return response;
-    } catch (error) {
-      throw error;
-    }
+    return response;
   }
 
   private async checkResponseStatus(response: Response) {
     if (!response.ok) {
       const errorData = await response.json();
       throw new Error(
-        `HTTP error! Status: ${response.status}, Message: ${errorData.message}`
+        `HTTP error! Status: ${response.status}, Message: ${errorData.message}`,
       );
     }
+  }
+
+  private checkEmptyResponse(response: Response) {
+    if (response.status === 204) {
+      return true;
+    }
+
+    return false;
   }
 }

@@ -1,13 +1,11 @@
 import { Popover } from '@mantine/core';
 import { ActionButton, Button, IconOutlineMenuBook, QuickGuide, Tooltip } from '@novu/design-system';
-import { useSegment } from '../providers/SegmentProvider';
 import { ComponentProps, useEffect, useMemo, useState } from 'react';
-import { matchPath, useLocation } from 'react-router-dom';
 import { css } from '@novu/novui/css';
 import { Flex, styled } from '@novu/novui/jsx';
 import { text, title } from '@novu/novui/recipes';
-import { PATHS } from './docs.const';
 import { DocsModal } from './DocsModal';
+import { useTelemetry } from '../../hooks/useNovuAPI';
 
 const Title = styled('h3', title);
 const Text = styled('p', text);
@@ -38,7 +36,7 @@ const DefaultButton = ({ onClick }: { onClick: () => void }) => (
   <ActionButton
     className={css({
       height: '150 !important',
-      minHeight: '150  !important',
+      minHeight: '150 !important',
     })}
     Icon={() => <IconOutlineMenuBook />}
     onClick={onClick}
@@ -48,30 +46,16 @@ const DefaultButton = ({ onClick }: { onClick: () => void }) => (
 export const DocsButton = ({
   TriggerButton = DefaultButton,
   tooltip,
+  path = '',
 }: {
   TriggerButton?: React.FC<{ onClick: () => void }>;
   tooltip?: ComponentProps<typeof Tooltip>['label'];
+  path?: string;
 }) => {
   const [opened, setOpened] = useState<boolean>(false);
-  const segment = useSegment();
-  const [path, setPath] = useState<string>('');
+  const track = useTelemetry();
   const shouldShowButton = useMemo(() => path.length > 0, [path]);
   const [docsOpen, setDocsOpen] = useState<boolean>(false);
-  const { pathname } = useLocation();
-
-  useEffect(() => {
-    for (const route in PATHS) {
-      if (matchPath(route, pathname) !== null) {
-        setPath(PATHS[route]);
-        break;
-      }
-    }
-
-    return () => {
-      setPath('');
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pathname]);
 
   const toggle = () => {
     setDocsOpen((prevOpen) => !prevOpen);
@@ -80,7 +64,7 @@ export const DocsButton = ({
   const onClose = () => {
     setOpened(false);
     localStorage.setItem('inline-docs-intro', 'false');
-    segment.track('Inline docs tooltip shown', {
+    track('Inline docs tooltip shown', {
       documentationPage: path,
       pageURL: window.location.href,
     });

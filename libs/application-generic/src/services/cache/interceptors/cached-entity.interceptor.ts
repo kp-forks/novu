@@ -1,4 +1,4 @@
-import { Inject, Logger } from '@nestjs/common';
+import { ConflictException, Inject, Logger } from '@nestjs/common';
 import { DistributedLockService } from '../../distributed-lock';
 import { CacheService, CachingConfig } from '../cache.service';
 
@@ -20,15 +20,19 @@ type CacheLockOptions = {
   retryCount: number;
 };
 
+type CachedEntityOptions<T_Output> = CachingConfig & {
+  skip?: (response: T_Output) => boolean;
+};
+
 const LOG_CONTEXT = 'CachedEntityInterceptor';
-// eslint-disable-next-line @typescript-eslint/naming-convention
-export function CachedEntity({
+
+export function CachedEntity<T_Output = any>({
   builder,
   options,
   lockOptions,
 }: {
   builder: (...args) => string;
-  options?: CachingConfig;
+  options?: CachedEntityOptions<T_Output>;
   lockOptions?: CacheLockOptions;
 }) {
   const injectCache = Inject(CacheService);
@@ -44,6 +48,7 @@ export function CachedEntity({
       injectLock(target, 'lockService');
     }
 
+    // eslint-disable-next-line no-param-reassign
     descriptor.value = async function (...args: any[]) {
       if (!this.cacheService?.cacheEnabled()) {
         return await originalMethod.apply(this, args);
@@ -67,7 +72,7 @@ export function CachedEntity({
         Logger.error(
           err,
           `An error has occurred when extracting "key: ${cacheKey}" in "method: ${methodName}"`,
-          LOG_CONTEXT
+          LOG_CONTEXT,
         );
       }
 
@@ -82,13 +87,15 @@ export function CachedEntity({
           Logger.error(
             err,
             `Failed to acquire lock for key: ${cacheKey} in "method: ${methodName}"`,
-            LOG_CONTEXT
+            LOG_CONTEXT,
           );
-          throw new Error(`Failed to acquire lock for key: ${cacheKey}`);
+          throw new ConflictException(
+            `Failed to acquire cache lock. Please try again later.`,
+          );
         }
       }
 
-      let response: unknown;
+      let response: T_Output;
       try {
         response = await originalMethod.apply(this, args);
       } catch (error) {
@@ -100,14 +107,17 @@ export function CachedEntity({
       }
 
       try {
-        await cacheService.set(cacheKey, JSON.stringify(response), options);
+        // Providing a capability to skip caching for certain method outputs.
+        if (!options?.skip?.(response)) {
+          await cacheService.set(cacheKey, JSON.stringify(response), options);
+        }
 
         return response;
       } catch (err) {
         Logger.error(
           err,
           `An error has occurred when inserting key: ${cacheKey} in "method: ${methodName}`,
-          LOG_CONTEXT
+          LOG_CONTEXT,
         );
       } finally {
         if (unlock) {

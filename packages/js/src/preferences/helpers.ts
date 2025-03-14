@@ -1,70 +1,112 @@
-import type { ApiService } from '@novu/client';
-
+import { InboxService } from '../api';
 import type { NovuEventEmitter } from '../event-emitter';
-import type { TODO } from '../types';
-import { PreferenceLevel } from '../types';
+import type { ChannelPreference, Result } from '../types';
+import { ChannelType, PreferenceLevel } from '../types';
 import { Preference } from './preference';
 import type { UpdatePreferencesArgs } from './types';
+import { NovuError } from '../utils/errors';
+import { PreferencesCache } from '../cache/preferences-cache';
 
-export const mapPreference = (apiPreference: {
-  template?: TODO;
-  preference: {
-    enabled: boolean;
-    channels: {
-      email?: boolean;
-      sms?: boolean;
-      in_app?: boolean;
-      chat?: boolean;
-      push?: boolean;
-    };
-  };
-}): Preference => {
-  const { template: workflow, preference } = apiPreference;
-  const hasWorkflow = workflow !== undefined;
-  const level = hasWorkflow ? PreferenceLevel.TEMPLATE : PreferenceLevel.GLOBAL;
-
-  return new Preference({
-    level,
-    enabled: preference.enabled,
-    channels: preference.channels,
-    workflow: hasWorkflow
-      ? {
-          id: workflow?._id,
-          name: workflow?.name,
-          critical: workflow?.critical,
-          identifier: workflow?.identifier,
-          data: workflow?.data,
-        }
-      : undefined,
-  });
+type UpdatePreferenceParams = {
+  emitter: NovuEventEmitter;
+  apiService: InboxService;
+  cache: PreferencesCache;
+  useCache: boolean;
+  args: UpdatePreferencesArgs;
 };
 
 export const updatePreference = async ({
   emitter,
   apiService,
+  cache,
+  useCache,
   args,
-}: {
-  emitter: NovuEventEmitter;
-  apiService: ApiService;
-  args: UpdatePreferencesArgs;
-}): Promise<Preference> => {
-  const { workflowId, enabled, channel } = args;
+}: UpdatePreferenceParams): Result<Preference> => {
+  const { workflowId, channels } = args;
   try {
-    emitter.emit('preferences.update.pending', { args });
+    emitter.emit('preference.update.pending', {
+      args,
+      data: args.preference
+        ? new Preference(
+            {
+              ...args.preference,
+              channels: {
+                ...args.preference.channels,
+                ...channels,
+              },
+            },
+            {
+              emitterInstance: emitter,
+              inboxServiceInstance: apiService,
+              cache,
+              useCache,
+            }
+          )
+        : undefined,
+    });
 
     let response;
     if (workflowId) {
-      response = await apiService.updateSubscriberPreference(workflowId, channel, enabled);
+      response = await apiService.updateWorkflowPreferences({ workflowId, channels });
     } else {
-      response = await apiService.updateSubscriberGlobalPreference([{ channelType: channel, enabled }]);
+      optimisticUpdateWorkflowPreferences({ emitter, apiService, cache, useCache, args });
+      response = await apiService.updateGlobalPreferences(channels);
     }
 
-    const preference = new Preference(mapPreference(response));
-    emitter.emit('preferences.update.success', { args, result: preference });
+    const preference = new Preference(response, {
+      emitterInstance: emitter,
+      inboxServiceInstance: apiService,
+      cache,
+      useCache,
+    });
+    emitter.emit('preference.update.resolved', { args, data: preference });
 
-    return preference;
+    return { data: preference };
   } catch (error) {
-    emitter.emit('preferences.update.error', { args, error });
-    throw error;
+    emitter.emit('preference.update.resolved', { args, error });
+
+    return { error: new NovuError('Failed to fetch notifications', error) };
   }
+};
+
+const optimisticUpdateWorkflowPreferences = ({
+  emitter,
+  apiService,
+  cache,
+  useCache,
+  args,
+}: UpdatePreferenceParams): void => {
+  const allPreferences = useCache ? cache?.getAll({}) : undefined;
+
+  allPreferences?.forEach((el) => {
+    if (el.level === PreferenceLevel.TEMPLATE) {
+      const mergedPreference = {
+        ...el,
+        channels: Object.entries(el.channels).reduce((acc, [key, value]) => {
+          const channelType = key as ChannelType;
+          acc[channelType] = args.channels[channelType] ?? value;
+
+          return acc;
+        }, {} as ChannelPreference),
+      };
+      const updatedPreference = args.preference
+        ? new Preference(mergedPreference, {
+            emitterInstance: emitter,
+            inboxServiceInstance: apiService,
+            cache,
+            useCache,
+          })
+        : undefined;
+
+      if (updatedPreference) {
+        emitter.emit('preference.update.pending', {
+          args: {
+            workflowId: el.workflow?.id,
+            channels: updatedPreference.channels,
+          },
+          data: updatedPreference,
+        });
+      }
+    }
+  });
 };

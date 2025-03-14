@@ -1,9 +1,6 @@
-import * as mongoose from 'mongoose';
-import { Schema } from 'mongoose';
-
+import mongoose, { Schema } from 'mongoose';
 import { schemaOptions } from '../schema-default.options';
 import { JobDBModel, JobStatusEnum } from './job.entity';
-import { getTTLOptions } from '../../shared';
 
 const jobSchema = new Schema<JobDBModel>(
   {
@@ -41,7 +38,7 @@ const jobSchema = new Schema<JobDBModel>(
       ref: 'Notification',
     },
     _mergedDigestId: {
-      type: Schema.Types.ObjectId,
+      type: String,
       ref: 'Job',
     },
     subscriberId: {
@@ -79,6 +76,9 @@ const jobSchema = new Schema<JobDBModel>(
         type: Schema.Types.String,
       },
       digestKey: {
+        type: Schema.Types.String,
+      },
+      digestValue: {
         type: Schema.Types.String,
       },
       type: {
@@ -129,13 +129,11 @@ const jobSchema = new Schema<JobDBModel>(
     actorId: {
       type: Schema.Types.String,
     },
-    expireAt: Schema.Types.Date,
     stepOutput: Schema.Types.Mixed,
+    preferences: Schema.Types.Mixed,
   },
   schemaOptions
 );
-
-jobSchema.index({ expireAt: 1 }, getTTLOptions());
 
 jobSchema.virtual('executionDetails', {
   ref: 'ExecutionDetails',
@@ -387,10 +385,6 @@ jobSchema.index({
   _notificationId: 1,
 });
 
-jobSchema.index({
-  _environmentId: 1,
-});
-
 jobSchema.index(
   {
     _mergedDigestId: 1,
@@ -400,5 +394,31 @@ jobSchema.index(
   }
 );
 
-// eslint-disable-next-line @typescript-eslint/naming-convention
+/*
+ * This index was created to push entries to Online Archive
+ */
+jobSchema.index({ createdAt: 1 });
+jobSchema.index(
+  {
+    subscriberId: 1,
+    _environmentId: 1,
+    'digest.digestValue': 1,
+    'digest.digestKey': 1,
+    _templateId: 1,
+    status: 1,
+    type: 1,
+  },
+  {
+    name: 'Guard from having two master jobs for same digest key, digest value, workflow and subscriber',
+    unique: true,
+    partialFilterExpression: {
+      status: 'delayed',
+      type: 'digest',
+      createdAt: { $gte: new Date('2025-03-05T00:00:01.505+00:00') },
+      'digest.digestValue': { $exists: true },
+      'digest.digestKey': { $exists: true },
+    },
+  }
+);
+
 export const Job = (mongoose.models.Job as mongoose.Model<JobDBModel>) || mongoose.model<JobDBModel>('Job', jobSchema);

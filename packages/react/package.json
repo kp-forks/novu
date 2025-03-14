@@ -1,0 +1,106 @@
+{
+  "name": "@novu/react",
+  "version": "2.6.6",
+  "repository": "https://github.com/novuhq/novu",
+  "description": "Novu <Inbox /> React SDK",
+  "author": "Novu",
+  "license": "ISC",
+  "main": "./dist/server/index.js",
+  "browser": "./dist/client/components/index.js",
+  "types": "./dist/client/components/index.d.ts",
+  "exports": {
+    ".": {
+      "browser": {
+        "import": {
+          "types": "./dist/client/components/index.d.mts",
+          "default": "./dist/client/components/index.mjs"
+        },
+        "require": {
+          "types": "./dist/client/components/index.d.ts",
+          "default": "./dist/client/components/index.js"
+        }
+      },
+      "import": {
+        "types": "./dist/client/components/index.d.mts",
+        "default": "./dist/server/index.mjs"
+      },
+      "require": {
+        "types": "./dist/client/components/index.d.ts",
+        "default": "./dist/server/index.js"
+      }
+    },
+    "./hooks": {
+      "import": {
+        "types": "./dist/client/hooks/index.d.mts",
+        "default": "./dist/client/hooks/index.mjs"
+      },
+      "require": {
+        "types": "./dist/client/hooks/index.d.ts",
+        "default": "./dist/client/hooks/index.js"
+      }
+    },
+    "./themes": {
+      "import": {
+        "types": "./dist/client/themes/index.d.mts",
+        "default": "./dist/client/themes/index.mjs"
+      },
+      "require": {
+        "types": "./dist/client/themes/index.d.ts",
+        "default": "./dist/client/themes/index.js"
+      }
+    }
+  },
+  "files": [
+    "dist/**/*",
+    "hooks/**/*",
+    "themes/**/*"
+  ],
+  "sideEffects": false,
+  "private": false,
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build:watch": "tsup --watch",
+    "build": "tsup && pnpm run check-exports",
+    "lint": "eslint src",
+    "check-exports": "attw --pack ."
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  },
+  "devDependencies": {
+    "@arethetypeswrong/cli": "^0.17.4",
+    "@types/node": "^20.14.12",
+    "@types/react": "*",
+    "@types/react-dom": "*",
+    "tsup": "^8.2.1",
+    "typescript": "5.6.2"
+  },
+  "peerDependencies": {
+    "react": "^18.0.0 || ^19.0.0",
+    "react-dom": "^18.0.0 || ^19.0.0"
+  },
+  "peerDependenciesMeta": {
+    "react-dom": {
+      "optional": true
+    }
+  },
+  "dependencies": {
+    "@novu/js": "workspace:*"
+  },
+  "nx": {
+    "tags": [
+      "type:package"
+    ]
+  }
+}

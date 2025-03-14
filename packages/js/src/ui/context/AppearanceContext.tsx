@@ -1,60 +1,35 @@
 import {
-  ParentProps,
+  Accessor,
   createContext,
   createEffect,
+  createMemo,
   createSignal,
   onCleanup,
   onMount,
+  ParentProps,
   useContext,
-  createMemo,
 } from 'solid-js';
 import { createStore } from 'solid-js/store';
 import { defaultVariables } from '../config';
 import { parseElements, parseVariables } from '../helpers';
-
-export type CSSProperties = {
-  [key: string]: string | number;
-};
-
-export type ElementStyles = string | CSSProperties;
-
-export type Elements = {
-  button?: ElementStyles;
-  root?: ElementStyles;
-  bell?: ElementStyles;
-  bellContainer?: ElementStyles;
-};
-
-export type Variables = {
-  colorBackground?: string;
-  colorForeground?: string;
-  colorPrimary?: string;
-  colorPrimaryForeground?: string;
-  colorSecondary?: string;
-  colorSecondaryForeground?: string;
-  colorNeutral?: string;
-  fontSize?: string;
-  borderRadius?: string;
-};
+import type { Appearance, Elements, Variables } from '../types';
 
 type AppearanceContextType = {
-  variables?: Variables;
-  elements?: Elements;
-  descriptorToCssInJsClass: Record<string, string>;
-  id: string;
+  variables: Accessor<Variables>;
+  elements: Accessor<Elements>;
+  animations: Accessor<boolean>;
+  appearanceKeyToCssInJsClass: Record<string, string>;
+  id: Accessor<string>;
 };
 
 const AppearanceContext = createContext<AppearanceContextType | undefined>(undefined);
-
-export type Theme = Pick<AppearanceContextType, 'elements' | 'variables'>;
-export type Appearance = Theme & { baseTheme?: Theme | Theme[] };
 
 type AppearanceProviderProps = ParentProps & { appearance?: Appearance } & { id: string };
 
 export const AppearanceProvider = (props: AppearanceProviderProps) => {
   const [store, setStore] = createStore<{
-    descriptorToCssInJsClass: Record<string, string>;
-  }>({ descriptorToCssInJsClass: {} });
+    appearanceKeyToCssInJsClass: Record<string, string>;
+  }>({ appearanceKeyToCssInJsClass: {} });
   const [styleElement, setStyleElement] = createSignal<HTMLStyleElement | null>(null);
   const [elementRules, setElementRules] = createSignal<string[]>([]);
   const [variableRules, setVariableRules] = createSignal<string[]>([]);
@@ -62,7 +37,15 @@ export const AppearanceProvider = (props: AppearanceProviderProps) => {
     Array.isArray(props.appearance?.baseTheme) ? props.appearance?.baseTheme || [] : [props.appearance?.baseTheme || {}]
   );
 
-  //place style element on HEAD. Placing in body is available for HTML 5.2 onward.
+  const id = () => props.id;
+  const variables = () => props.appearance?.variables || {};
+  const animations = () => props.appearance?.animations ?? true;
+  const allElements = createMemo(() => {
+    const baseElements = themes().reduce<Elements>((acc, obj) => ({ ...acc, ...(obj.elements || {}) }), {});
+
+    return { ...baseElements, ...(props.appearance?.elements || {}) };
+  });
+
   onMount(() => {
     const el = document.getElementById(props.id);
     if (el) {
@@ -76,16 +59,16 @@ export const AppearanceProvider = (props: AppearanceProviderProps) => {
     document.head.appendChild(styleEl);
 
     setStyleElement(styleEl);
+
+    onCleanup(() => {
+      const element = document.getElementById(props.id);
+      if (element) {
+        element.remove();
+      }
+    });
   });
 
-  onCleanup(() => {
-    const el = document.getElementById(props.id);
-    if (el) {
-      el.remove();
-    }
-  });
-
-  //handle variables
+  // handle variables
   createEffect(() => {
     const styleEl = styleElement();
 
@@ -103,7 +86,7 @@ export const AppearanceProvider = (props: AppearanceProviderProps) => {
     );
   });
 
-  //handle elements
+  // handle elements
   createEffect(() => {
     const styleEl = styleElement();
 
@@ -111,10 +94,8 @@ export const AppearanceProvider = (props: AppearanceProviderProps) => {
       return;
     }
 
-    const baseElements = themes().reduce<Elements>((acc, obj) => ({ ...acc, ...(obj.elements || {}) }), {});
-
-    const elementsStyleData = parseElements({ ...baseElements, ...(props.appearance?.elements || {}) });
-    setStore('descriptorToCssInJsClass', (obj) => ({
+    const elementsStyleData = parseElements(allElements());
+    setStore('appearanceKeyToCssInJsClass', (obj) => ({
       ...obj,
       ...elementsStyleData.reduce<Record<string, string>>((acc, item) => {
         acc[item.key] = item.className;
@@ -125,7 +106,7 @@ export const AppearanceProvider = (props: AppearanceProviderProps) => {
     setElementRules(elementsStyleData.map((el) => el.rule));
   });
 
-  //add rules to style element
+  // add rules to style element
   createEffect(() => {
     const styleEl = styleElement();
     if (!styleEl) {
@@ -138,9 +119,11 @@ export const AppearanceProvider = (props: AppearanceProviderProps) => {
   return (
     <AppearanceContext.Provider
       value={{
-        elements: props.appearance?.elements || {},
-        descriptorToCssInJsClass: store.descriptorToCssInJsClass,
-        id: props.id,
+        elements: allElements,
+        variables,
+        appearanceKeyToCssInJsClass: store.appearanceKeyToCssInJsClass, // stores are reactive
+        animations,
+        id,
       }}
     >
       {props.children}

@@ -1,21 +1,33 @@
-import { Button, JsonSchemaForm, Tabs } from '@novu/novui';
-import { IconOutlineEditNote, IconOutlineTune, IconOutlineSave } from '@novu/novui/icons';
 import { FC, useMemo } from 'react';
+
+import { Button, JsonSchemaForm, Tabs, Title, useDebouncedCallback } from '@novu/novui';
+import { IconOutlineEditNote, IconOutlineTune, IconOutlineSave } from '@novu/novui/icons';
+import { css } from '@novu/novui/css';
+import { Container, Flex } from '@novu/novui/jsx';
+
+import { FeatureFlagsKeysEnum } from '@novu/shared';
 import { useDocsModal } from '../../../../components/docs/useDocsModal';
 import { When } from '../../../../components/utils/When';
 import { ControlsEmptyPanel } from './ControlsEmptyPanel';
-import { css } from '@novu/novui/css';
-import { Container } from '@novu/novui/jsx';
-import { useSegment } from '../../../../components/providers/SegmentProvider';
+import { useTelemetry } from '../../../../hooks/useNovuAPI';
+import { PATHS } from '../../../../components/docs/docs.const';
+import { getSuggestionVariables, subscriberVariables } from '../../../utils';
+import { useFeatureFlag } from '../../../../hooks/useFeatureFlag';
+
+export type OnChangeType = 'step' | 'payload';
 
 interface IWorkflowStepEditorControlsPanelProps {
   step: any;
   workflow: any;
-  onChange: (type: 'step' | 'payload', data: any) => void;
+  onChange: (type: OnChangeType, data: any, id?: string) => void;
   onSave?: () => void;
   defaultControls?: Record<string, unknown>;
   isLoadingSave?: boolean;
+  className?: string;
+  source?: 'studio' | 'playground' | 'dashboard';
 }
+
+const TYPING_DEBOUNCE_TIME_MS = 500;
 
 export const WorkflowStepEditorControlsPanel: FC<IWorkflowStepEditorControlsPanelProps> = ({
   step,
@@ -24,20 +36,39 @@ export const WorkflowStepEditorControlsPanel: FC<IWorkflowStepEditorControlsPane
   onSave,
   defaultControls,
   isLoadingSave,
+  className,
 }) => {
-  const segment = useSegment();
+  const track = useTelemetry();
   const { Component, toggle, setPath } = useDocsModal();
-  const havePayloadProperties = useMemo(() => {
-    return Object.keys(workflow?.payload?.schema || workflow?.options?.payloadSchema || {}).length > 0;
-  }, [workflow?.payload?.schema, workflow?.options?.payloadSchema]);
 
-  const haveControlProperties = useMemo(() => {
-    return Object.keys(step?.controls?.schema?.properties || step?.inputs?.schema?.properties || {}).length > 0;
-  }, [step?.controls?.schema, step?.inputs?.schema]);
+  const [payloadProperties, havePayloadProperties] = useMemo(() => {
+    const payloadObject = workflow?.payload?.schema?.properties || workflow?.payloadSchema?.properties || {};
+
+    return [getSuggestionVariables(payloadObject, 'payload'), Object.keys(payloadObject).length > 0];
+  }, [workflow?.payload?.schema, workflow?.payloadSchema]);
+
+  const [haveControlProperties] = useMemo(() => {
+    const controlsObject = step?.controls?.schema?.properties || {};
+
+    return [Object.keys(controlsObject).length > 0];
+  }, [step?.controls?.schema]);
+
+  const handleOnChange = useDebouncedCallback(async (type: OnChangeType, data: any, id?: string) => {
+    onChange(type, data, id);
+  }, TYPING_DEBOUNCE_TIME_MS);
+
+  const isAutocompleteEnabled = useFeatureFlag(FeatureFlagsKeysEnum.IS_CONTROLS_AUTOCOMPLETE_ENABLED);
+
+  // set variables to undefined when autocomplete flag is disabled to use plain text entry.
+  const variables = useMemo(
+    () => (isAutocompleteEnabled ? [...(subscriberVariables || []), ...(payloadProperties || [])] : undefined),
+    [payloadProperties, isAutocompleteEnabled]
+  );
 
   return (
     <>
       <Tabs
+        className={className}
         defaultValue="step-controls"
         tabConfigs={[
           {
@@ -48,14 +79,15 @@ export const WorkflowStepEditorControlsPanel: FC<IWorkflowStepEditorControlsPane
               <Container className={formContainerClassName}>
                 <When truthy={haveControlProperties}>
                   {onSave && (
-                    <div style={{ display: 'flex', justifyContent: 'end' }}>
+                    <Flex justifyContent="space-between" alignItems={'center'} marginBottom="50">
+                      <Title variant="subsection">Email step controls</Title>
                       <Button
                         loading={isLoadingSave}
                         variant={'filled'}
-                        size={'sm'}
+                        size={'xs'}
                         Icon={IconOutlineSave}
                         onClick={() => {
-                          segment.track('Step controls saved - [Workflows Step Page]', {
+                          track('Step controls saved - [Workflows Step Page]', {
                             step: step?.type,
                           });
                           onSave();
@@ -63,20 +95,21 @@ export const WorkflowStepEditorControlsPanel: FC<IWorkflowStepEditorControlsPane
                       >
                         Save
                       </Button>
-                    </div>
+                    </Flex>
                   )}
 
                   <JsonSchemaForm
-                    onChange={(data) => onChange('step', data)}
-                    schema={step?.controls?.schema || step?.inputs?.schema || {}}
+                    onChange={(data, id) => handleOnChange('step', data, id)}
+                    schema={step?.controls?.schema || {}}
                     formData={defaultControls || {}}
+                    variables={variables}
                   />
                 </When>
                 <When truthy={!haveControlProperties}>
                   <ControlsEmptyPanel
                     content="Modifiable controls defined by the code schema."
                     onDocsClick={() => {
-                      setPath('framework/concepts/controls');
+                      setPath(PATHS.CONCEPT_CONTROLS);
                       toggle();
                     }}
                   />
@@ -92,8 +125,8 @@ export const WorkflowStepEditorControlsPanel: FC<IWorkflowStepEditorControlsPane
               <Container className={formContainerClassName}>
                 <When truthy={havePayloadProperties}>
                   <JsonSchemaForm
-                    onChange={(data) => onChange('payload', data)}
-                    schema={workflow?.payload?.schema || workflow?.options?.payloadSchema || {}}
+                    onChange={(data, id) => handleOnChange('payload', data, id)}
+                    schema={workflow?.payload?.schema || workflow?.payloadSchema || {}}
                     formData={{}}
                   />
                 </When>
@@ -101,7 +134,7 @@ export const WorkflowStepEditorControlsPanel: FC<IWorkflowStepEditorControlsPane
                   <ControlsEmptyPanel
                     content="Payload ensures correct formatting and data validity."
                     onDocsClick={() => {
-                      setPath('framework/concepts/payload');
+                      setPath(`${PATHS.WORKFLOW_INTRODUCTION}#payload-schema`);
                       toggle();
                     }}
                   />
@@ -117,7 +150,7 @@ export const WorkflowStepEditorControlsPanel: FC<IWorkflowStepEditorControlsPane
 };
 
 export const formContainerClassName = css({
-  h: '80vh',
-  overflowY: 'auto !important',
+  h: '[72vh]',
+  overflowY: 'auto',
   scrollbar: 'hidden',
 });

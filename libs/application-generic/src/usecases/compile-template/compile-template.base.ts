@@ -1,19 +1,19 @@
-import { OrganizationEntity, OrganizationRepository } from '@novu/dal';
+import { CommunityOrganizationRepository, OrganizationEntity } from '@novu/dal';
 import { ModuleRef } from '@nestjs/core';
 import { NotFoundException } from '@nestjs/common';
 
 export abstract class CompileTemplateBase {
   protected constructor(
-    protected organizationRepository: OrganizationRepository,
-    protected moduleRef: ModuleRef
+    protected communityOrganizationRepository: CommunityOrganizationRepository,
+    protected moduleRef: ModuleRef,
   ) {}
 
   protected async getOrganization(
-    organizationId: string
+    organizationId: string,
   ): Promise<OrganizationEntity | undefined> {
-    const organization = await this.organizationRepository.findById(
+    const organization = await this.communityOrganizationRepository.findById(
       organizationId,
-      'branding defaultLocale'
+      'branding defaultLocale',
     );
 
     if (!organization) {

@@ -3,9 +3,15 @@ import { useNavigate } from 'react-router-dom';
 import { useMutation } from '@tanstack/react-query';
 import { useMantineColorScheme } from '@mantine/core';
 
-import { ICreateOrganizationDto, IResponseError, ProductUseCases } from '@novu/shared';
-import { JobTitleEnum } from '@novu/shared';
-import { useAuth, useVercelIntegration, useVercelParams } from '../../../hooks';
+import {
+  FeatureFlagsKeysEnum,
+  ICreateOrganizationDto,
+  IResponseError,
+  ProductUseCases,
+  JobTitleEnum,
+} from '@novu/shared';
+import { successMessage } from '@novu/design-system';
+import { useAuth, useFeatureFlag, useVercelIntegration, useVercelParams } from '../../../hooks';
 import { useSegment } from '../../../components/providers/SegmentProvider';
 import { HubspotForm } from '../../../ee/billing/components/HubspotForm';
 
@@ -13,15 +19,15 @@ import { api } from '../../../api/api.client';
 import { ROUTES } from '../../../constants/routes';
 import { HUBSPOT_FORM_IDS } from '../../../constants/hubspotForms';
 import SetupLoader from './SetupLoader';
-import { successMessage } from '@novu/design-system';
 
 export function HubspotSignupForm() {
   const [loading, setLoading] = useState<boolean>();
   const navigate = useNavigate();
-  const { login, currentUser, currentOrganization, environmentId } = useAuth();
+  const { login, currentUser, currentOrganization } = useAuth();
   const { startVercelSetup } = useVercelIntegration();
   const { isFromVercel } = useVercelParams();
   const { colorScheme } = useMantineColorScheme();
+  const isV2Enabled = useFeatureFlag(FeatureFlagsKeysEnum.IS_V2_ENABLED);
 
   const segment = useSegment();
 
@@ -33,15 +39,13 @@ export function HubspotSignupForm() {
 
   useEffect(() => {
     if (currentUser) {
-      if (environmentId) {
+      if (currentOrganization) {
         if (isFromVercel) {
           startVercelSetup();
-
-          return;
         }
       }
     }
-  }, [isFromVercel, startVercelSetup, currentUser, environmentId]);
+  }, [currentUser, currentOrganization, isFromVercel, startVercelSetup]);
 
   async function createOrganization(data: IOrganizationCreateForm) {
     const { organizationName, jobTitle, ...rest } = data;
@@ -53,7 +57,7 @@ export function HubspotSignupForm() {
     // TODO: Move this into useAuth
     const organizationResponseToken = await api.post(`/v1/auth/organizations/${organization._id}/switch`, {});
 
-    login(organizationResponseToken, ROUTES.GET_STARTED);
+    login(organizationResponseToken, isV2Enabled ? `${ROUTES.WORKFLOWS}?onboarding=true` : ROUTES.GET_STARTED);
   }
 
   const handleCreateOrganization = async (data: IOrganizationCreateForm) => {
@@ -73,7 +77,7 @@ export function HubspotSignupForm() {
 
       return;
     }
-    navigate(ROUTES.GET_STARTED);
+    navigate(isV2Enabled ? `${ROUTES.WORKFLOWS}?onboarding=true` : ROUTES.GET_STARTED);
   };
 
   if (!currentUser || loading) {

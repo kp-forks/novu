@@ -1,14 +1,14 @@
 import { Module } from '@nestjs/common';
-
-import { USE_CASES } from './usecases';
-import { InboxController } from './inbox.controller';
-import { SharedModule } from '../shared/shared.module';
 import { AuthModule } from '../auth/auth.module';
-import { SubscribersModule } from '../subscribers/subscribers.module';
 import { IntegrationModule } from '../integrations/integrations.module';
+import { SharedModule } from '../shared/shared.module';
+import { SubscribersV1Module } from '../subscribers/subscribersV1.module';
+import { InboxController } from './inbox.controller';
+import { USE_CASES } from './usecases';
+import { PreferencesModule } from '../preferences';
 
 @Module({
-  imports: [SharedModule, SubscribersModule, AuthModule, IntegrationModule],
+  imports: [SharedModule, SubscribersV1Module, AuthModule, IntegrationModule, PreferencesModule],
   providers: [...USE_CASES],
   exports: [...USE_CASES],
   controllers: [InboxController],

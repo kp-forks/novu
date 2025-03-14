@@ -1,31 +1,45 @@
 import { css } from '@novu/novui/css';
-import { Footer } from './components/Footer';
-import { Header } from './components/Header';
 import { useEffect } from 'react';
 import { Title, Text } from '@novu/novui';
 import { VStack } from '@novu/novui/jsx';
+import { useNavigate } from 'react-router-dom';
+import { HealthCheck } from '@novu/framework/internal';
+import { Footer } from './components/Footer';
+import { Header } from './components/Header';
 import { SetupTimeline } from './components/SetupTimeline';
-import { useSegment } from '../../components/providers/SegmentProvider';
 import { Wrapper } from './components/Wrapper';
 import { ROUTES } from '../../constants/routes';
-import { useNavigate } from 'react-router-dom';
 import { useHealthCheck } from '../../studio/hooks/useBridgeAPI';
-import { BridgeStatus } from '../../bridgeApi/bridgeApi.client';
 import { useStudioState } from '../../studio/StudioStateProvider';
 import { capitalizeFirstLetter } from '../../utils/string';
+import { setNovuOnboardingStepCookie } from '../../utils';
+import { useTelemetry } from '../../hooks/useNovuAPI';
+
+const ONBOARDING_COOKIE_EXPIRY_DAYS = 10 * 365;
 
 export const StudioOnboarding = () => {
-  const segment = useSegment();
+  const track = useTelemetry();
   const navigate = useNavigate();
   const { testUser } = useStudioState();
   const { data, isLoading } = useHealthCheck();
 
   useEffect(() => {
-    segment.track('Add endpoint step started - [Onboarding - Signup]');
+    track('Add endpoint step started - [Onboarding - Signup]');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const welcomeMessage = `Welcome ${capitalizeFirstLetter(testUser?.firstName || '')}`.trim() + `. Let's get started!`;
+  useEffect(() => {
+    /**
+     * User already onboarded to Novu and have more than one workflow
+     */
+    if (data?.discovered?.workflows && data?.discovered?.workflows > 1) {
+      setNovuOnboardingStepCookie();
+      navigate(ROUTES.STUDIO_FLOWS);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data]);
+
+  const welcomeMessage = `${`Welcome ${capitalizeFirstLetter(testUser?.firstName || '')}`.trim()}. Let's get started!`;
 
   return (
     <Wrapper>
@@ -48,7 +62,7 @@ export const StudioOnboarding = () => {
             Send your first email notification, by connecting to your Novu Bridge Endpoint. This setup will create a
             sample Next.js project with a pre-configured <code>@novu/framework</code>.
           </Text>
-          <SetupTimeline testResponse={{ data: data as BridgeStatus, isLoading }} />
+          <SetupTimeline testResponse={{ data: data as HealthCheck, isLoading }} />
         </div>
       </VStack>
       <Footer

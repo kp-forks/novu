@@ -1,10 +1,3 @@
-export interface IEvents {
-  trigger(workflowIdentifier: string, data: ITriggerPayloadOptions);
-  broadcast(workflowIdentifier: string, data: IBroadcastPayloadOptions);
-  bulkTrigger(events: IBulkEvents[]);
-  cancel(transactionId: string);
-}
-
 import {
   DigestUnitEnum,
   ITriggerPayload,
@@ -14,8 +7,15 @@ import {
   SmsProviderIdEnum,
 } from '@novu/shared';
 
+export interface IEvents {
+  trigger(workflowIdentifier: string, data: ITriggerPayloadOptions);
+  broadcast(workflowIdentifier: string, data: IBroadcastPayloadOptions);
+  bulkTrigger(events: IBulkEvents[]);
+  cancel(transactionId: string);
+}
+
 export interface IBroadcastPayloadOptions {
-  payload: ITriggerPayload;
+  payload?: ITriggerPayload;
   overrides?: ITriggerOverrides;
   tenant?: ITriggerTenant;
   transactionId?: string;
@@ -139,7 +139,7 @@ export type ITriggerOverrideSMS = {
   content?: string;
   from?: string;
   customData?: Record<string, any>;
-};
+} & IIntegrationOverride;
 
 export type ITriggerOverrideExpo = {
   to?: string | string[];

@@ -1,22 +1,15 @@
 import axios from 'axios';
 
-export type StepPreviewParams = {
-  workflowId: string;
-  stepId: string;
-  payload: Record<string, unknown>;
-  controls: Record<string, unknown>;
-};
+import type { DiscoverWorkflowOutput, Event, ExecuteOutput, HealthCheck } from '@novu/framework/internal';
 
 export type TriggerParams = {
   workflowId: string;
   bridgeUrl?: string;
   to: { subscriberId: string; email: string };
   payload: Record<string, unknown>;
-};
-
-export type BridgeStatus = {
-  status: 'ok';
-  bridgeUrl?: string;
+  controls?: {
+    steps?: Record<string, unknown>;
+  };
 };
 
 export function buildBridgeHTTPClient(baseURL: string) {
@@ -24,10 +17,13 @@ export function buildBridgeHTTPClient(baseURL: string) {
     baseURL,
     headers: {
       'Content-Type': 'application/json',
+      // Required if a custom tunnel is used by developers such as localtunnel.it
+      'Bypass-Tunnel-Reminder': true,
     },
   });
 
   const get = async (url, params = {}) => {
+    // eslint-disable-next-line no-useless-catch
     try {
       const response = await httpClient.get(url, { params });
 
@@ -40,6 +36,7 @@ export function buildBridgeHTTPClient(baseURL: string) {
 
   // POST method
   const post = async (url, data = {}) => {
+    // eslint-disable-next-line no-useless-catch
     try {
       const response = await httpClient.post(url, data);
 
@@ -51,16 +48,13 @@ export function buildBridgeHTTPClient(baseURL: string) {
   };
 
   return {
-    /**
-     * TODO: Use framework shared types
-     */
-    async discover(): Promise<{ workflows: any[] }> {
+    async discover(): Promise<{ workflows: DiscoverWorkflowOutput[] }> {
       return get('', {
         action: 'discover',
       });
     },
 
-    async healthCheck(): Promise<BridgeStatus> {
+    async healthCheck(): Promise<HealthCheck> {
       return get('', {
         action: 'health-check',
       });
@@ -69,7 +63,7 @@ export function buildBridgeHTTPClient(baseURL: string) {
     /**
      * TODO: Use framework shared types
      */
-    async getWorkflow(workflowId: string): Promise<any> {
+    async getWorkflow(workflowId: string): Promise<DiscoverWorkflowOutput | undefined> {
       const { workflows } = await this.discover();
 
       return workflows.find((workflow) => workflow.workflowId === workflowId);
@@ -78,26 +72,36 @@ export function buildBridgeHTTPClient(baseURL: string) {
     /**
      * TODO: Use framework shared types
      */
-    async getStepPreview({ workflowId, stepId, controls, payload }: StepPreviewParams): Promise<any> {
+    async getStepPreview({
+      workflowId,
+      stepId,
+      controls,
+      payload,
+      state,
+      subscriber,
+    }: Omit<Event, 'action'>): Promise<ExecuteOutput> {
       return post(`${baseURL}?action=preview&workflowId=${workflowId}&stepId=${stepId}`, {
-        // TODO: Rename to controls
-        inputs: controls || {},
-        // TODO: Rename to payload
-        data: payload || {},
+        controls: controls || {},
+        payload: payload || {},
+        state: state || [],
+        subscriber: subscriber || {},
       });
     },
 
     /**
      * TODO: Use framework shared types
      */
-    async trigger({ workflowId, bridgeUrl, to, payload }: TriggerParams): Promise<any> {
+    async trigger({ workflowId, bridgeUrl, to, payload, controls }: TriggerParams): Promise<any> {
+      // eslint-disable-next-line no-param-reassign
       payload = payload || {};
+      // eslint-disable-next-line no-param-reassign
       payload.__source = 'studio-test-workflow';
 
       return post(`${baseURL}?action=trigger&workflowId=${workflowId}`, {
         bridgeUrl,
         to,
         payload,
+        controls,
       });
     },
   };

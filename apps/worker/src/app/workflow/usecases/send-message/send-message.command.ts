@@ -1,6 +1,8 @@
 import { IsDefined, IsOptional, IsString } from 'class-validator';
 import { NotificationStepEntity, JobEntity } from '@novu/dal';
-import { EnvironmentWithUserCommand, ExecuteOutput, IBridgeChannelResponse } from '@novu/application-generic';
+import { EnvironmentWithUserCommand } from '@novu/application-generic';
+import { ExecuteOutput } from '@novu/framework/internal';
+import { WorkflowPreferences } from '@novu/shared';
 
 export class SendMessageCommand extends EnvironmentWithUserCommand {
   @IsDefined()
@@ -27,7 +29,7 @@ export class SendMessageCommand extends EnvironmentWithUserCommand {
   notificationId: string;
 
   @IsOptional()
-  _templateId: string;
+  _templateId?: string;
 
   @IsDefined()
   subscriberId: string;
@@ -45,8 +47,11 @@ export class SendMessageCommand extends EnvironmentWithUserCommand {
   job: JobEntity;
 
   @IsOptional()
-  bridgeData?: ExecuteOutput<IBridgeChannelResponse> | null;
+  bridgeData?: ExecuteOutput | null;
 
   @IsDefined()
   tags: string[];
+
+  @IsOptional()
+  statelessPreferences?: WorkflowPreferences;
 }

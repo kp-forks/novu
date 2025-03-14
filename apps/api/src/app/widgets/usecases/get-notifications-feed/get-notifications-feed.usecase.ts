@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { ActorTypeEnum, ChannelTypeEnum } from '@novu/shared';
 import {
   AnalyticsService,
@@ -6,6 +6,7 @@ import {
   buildSubscriberKey,
   CachedEntity,
   CachedQuery,
+  InstrumentUsecase,
 } from '@novu/application-generic';
 import { MessageRepository, SubscriberEntity, SubscriberRepository } from '@novu/dal';
 
@@ -33,11 +34,12 @@ export class GetNotificationsFeed {
     }
   }
 
+  @InstrumentUsecase()
   @CachedQuery({
     builder: ({ environmentId, subscriberId, ...command }: GetNotificationsFeedCommand) =>
       buildFeedKey().cache({
-        environmentId: environmentId,
-        subscriberId: subscriberId,
+        environmentId,
+        subscriberId,
         ...command,
       }),
   })
@@ -51,9 +53,9 @@ export class GetNotificationsFeed {
 
     if (!subscriber) {
       throw new ApiException(
-        'Subscriber not found for this environment with the id: ' +
-          command.subscriberId +
-          '. Make sure to create a subscriber before fetching the feed.'
+        `Subscriber not found for this environment with the id: ${
+          command.subscriberId
+        }. Make sure to create a subscriber before fetching the feed.`
       );
     }
 
@@ -107,8 +109,8 @@ export class GetNotificationsFeed {
 
     return {
       data,
-      totalCount: totalCount,
-      hasMore: hasMore,
+      totalCount,
+      hasMore,
       pageSize: command.limit,
       page: command.page,
     };

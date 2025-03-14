@@ -1,0 +1,5 @@
+{
+  "main": "../dist/client/themes/index.js",
+  "module": "../dist/client/themes/index.mjs",
+  "types": "../dist/client/themes/index.d.ts"
+}

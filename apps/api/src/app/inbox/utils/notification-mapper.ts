@@ -1,5 +1,5 @@
 import type { MessageEntity } from '@novu/dal';
-import { ButtonTypeEnum } from '@novu/shared';
+import { ButtonTypeEnum, MessageActionStatusEnum } from '@novu/shared';
 
 import type { InboxNotification, Subscriber } from './types';
 
@@ -13,10 +13,11 @@ const mapSingleItem = ({
   archivedAt,
   channel,
   subscriber,
-  actorSubscriber,
-  actor,
+  subject,
+  avatar,
   cta,
   tags,
+  data,
 }: MessageEntity): InboxNotification => {
   const to: Subscriber = {
     id: subscriber?._id ?? '',
@@ -27,38 +28,49 @@ const mapSingleItem = ({
   };
   const primaryCta = cta.action?.buttons?.find((button) => button.type === ButtonTypeEnum.PRIMARY);
   const secondaryCta = cta.action?.buttons?.find((button) => button.type === ButtonTypeEnum.SECONDARY);
+  const actionType = cta.action?.result?.type;
+  const actionStatus = cta.action?.status;
 
   return {
     id: _id,
-    // subject: subject,
+    subject,
     body: content as string,
     to,
-    read,
-    archived,
+    isRead: read,
+    isArchived: archived,
     createdAt,
     readAt: lastReadDate,
     archivedAt,
-    actor: actorSubscriber
-      ? {
-          id: actorSubscriber._id,
-          firstName: actorSubscriber.firstName,
-          lastName: actorSubscriber.lastName,
-          avatar: actorSubscriber.avatar,
-          subscriberId: actorSubscriber.subscriberId,
-        }
-      : undefined,
-    avatar: actor,
+    avatar,
     primaryAction: primaryCta && {
-      type: primaryCta.type,
       label: primaryCta.content,
-      url: cta?.data.url,
+      isCompleted: actionType === ButtonTypeEnum.PRIMARY && actionStatus === MessageActionStatusEnum.DONE,
+      redirect: primaryCta.url
+        ? {
+            url: primaryCta.url,
+            target: primaryCta.target,
+          }
+        : undefined,
     },
     secondaryAction: secondaryCta && {
-      type: secondaryCta.type,
       label: secondaryCta.content,
+      isCompleted: actionType === ButtonTypeEnum.SECONDARY && actionStatus === MessageActionStatusEnum.DONE,
+      redirect: secondaryCta.url
+        ? {
+            url: secondaryCta.url,
+            target: secondaryCta.target,
+          }
+        : undefined,
     },
     channelType: channel,
     tags,
+    redirect: cta.data?.url
+      ? {
+          url: cta.data.url,
+          target: cta.data.target,
+        }
+      : undefined,
+    data,
   };
 };
 

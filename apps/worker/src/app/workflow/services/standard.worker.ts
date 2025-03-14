@@ -1,7 +1,6 @@
-const nr = require('newrelic');
 import { forwardRef, Inject, Injectable, Logger } from '@nestjs/common';
 
-import { ObservabilityBackgroundTransactionEnum } from '@novu/shared';
+import { ObservabilityBackgroundTransactionEnum, JobStatusEnum } from '@novu/shared';
 import {
   BullMqService,
   getStandardWorkerOptions,
@@ -15,17 +14,18 @@ import {
   WorkflowInMemoryProviderService,
 } from '@novu/application-generic';
 
+import { CommunityOrganizationRepository, JobRepository } from '@novu/dal';
 import {
   RunJob,
   RunJobCommand,
-  SetJobAsCommand,
-  SetJobAsCompleted,
   SetJobAsFailed,
   SetJobAsFailedCommand,
   WebhookFilterBackoffStrategy,
   HandleLastFailedJobCommand,
   HandleLastFailedJob,
 } from '../usecases';
+
+const nr = require('newrelic');
 
 const LOG_CONTEXT = 'StandardWorker';
 
@@ -34,12 +34,13 @@ export class StandardWorker extends StandardWorkerService {
   constructor(
     private handleLastFailedJob: HandleLastFailedJob,
     private runJob: RunJob,
-    @Inject(forwardRef(() => SetJobAsCompleted)) private setJobAsCompleted: SetJobAsCompleted,
     @Inject(forwardRef(() => SetJobAsFailed)) private setJobAsFailed: SetJobAsFailed,
     @Inject(forwardRef(() => WebhookFilterBackoffStrategy))
     private webhookFilterBackoffStrategy: WebhookFilterBackoffStrategy,
     @Inject(forwardRef(() => WorkflowInMemoryProviderService))
-    public workflowInMemoryProviderService: WorkflowInMemoryProviderService
+    public workflowInMemoryProviderService: WorkflowInMemoryProviderService,
+    private organizationRepository: CommunityOrganizationRepository,
+    private jobRepository: JobRepository
   ) {
     super(new BullMqService(workflowInMemoryProviderService));
 
@@ -47,6 +48,10 @@ export class StandardWorker extends StandardWorkerService {
 
     this.worker.on('failed', async (job: Job<IStandardDataDto, void, string>, error: Error): Promise<void> => {
       await this.jobHasFailed(job, error);
+    });
+
+    this.worker.on('completed', async (job: Job<IStandardDataDto, void, string>): Promise<void> => {
+      await this.jobHasCompleted(job);
     });
   }
 
@@ -71,14 +76,14 @@ export class StandardWorker extends StandardWorkerService {
       const message = data.payload?.message;
 
       if (!message) {
-        throw new Error('Job data is missing required fields' + JSON.stringify(data));
+        throw new Error(`Job data is missing required fields${JSON.stringify(data)}`);
       }
 
       return {
         environmentId: message._environmentId,
         jobId: message._jobId,
         organizationId: message._organizationId,
-        userId: userId,
+        userId,
       };
     }
 
@@ -93,17 +98,26 @@ export class StandardWorker extends StandardWorkerService {
   private getWorkerProcessor() {
     return async ({ data }: { data: IStandardDataDto }) => {
       const minimalJobData = this.extractMinimalJobData(data);
+      const organizationExists = await this.organizationExist(data);
+
+      if (!organizationExists) {
+        Logger.verbose(
+          `Organization not found for organizationId ${minimalJobData.organizationId}. Skipping job.`,
+          LOG_CONTEXT
+        );
+
+        return;
+      }
 
       Logger.verbose(`Job ${minimalJobData.jobId} is being processed in the new instance standard worker`, LOG_CONTEXT);
 
-      return await new Promise(async (resolve, reject) => {
-        // eslint-disable-next-line @typescript-eslint/no-this-alias
+      return await new Promise((resolve, reject) => {
         const _this = this;
 
         nr.startBackgroundTransaction(
           ObservabilityBackgroundTransactionEnum.JOB_PROCESSING_QUEUE,
           'Trigger Engine',
-          function () {
+          function processTask() {
             const transaction = nr.getTransaction();
 
             storage.run(new Store(PinoLogger.root), () => {
@@ -135,15 +149,22 @@ export class StandardWorker extends StandardWorkerService {
     try {
       const minimalData = this.extractMinimalJobData(job.data);
       jobId = minimalData.jobId;
-      const environmentId = minimalData.environmentId;
-      const userId = minimalData.userId;
 
-      await this.setJobAsCompleted.execute(
-        SetJobAsCommand.create({
-          environmentId,
-          jobId,
-          userId,
-        })
+      /*
+       * The job might have been cancelled in the pipeline (e.g., by a digest or delay step)
+       * In such cases, we only update jobs that are in RUNNING status to COMPLETED, preserving other final statuses
+       */
+      await this.jobRepository.updateOne(
+        {
+          _environmentId: minimalData.environmentId,
+          _id: minimalData.jobId,
+          status: JobStatusEnum.RUNNING,
+        },
+        {
+          $set: {
+            status: JobStatusEnum.COMPLETED,
+          },
+        }
       );
     } catch (error) {
       Logger.error(error, `Failed to set job ${jobId} as completed`, LOG_CONTEXT);
@@ -169,12 +190,12 @@ export class StandardWorker extends StandardWorkerService {
       }
 
       if (shouldHandleLastFailedJob) {
-        const handleLastFailedJobCommand = HandleLastFailedJobCommand.create({
-          ...minimalData,
-          error,
-        });
-
-        await this.handleLastFailedJob.execute(handleLastFailedJobCommand);
+        await this.handleLastFailedJob.execute(
+          HandleLastFailedJobCommand.create({
+            ...minimalData,
+            error,
+          })
+        );
       }
     } catch (anotherError) {
       Logger.error(anotherError, `Failed to set job ${jobId} as failed`, LOG_CONTEXT);
@@ -183,16 +204,22 @@ export class StandardWorker extends StandardWorkerService {
 
   private getBackoffStrategies = () => {
     return async (attemptsMade: number, type: string, eventError: Error, eventJob: Job): Promise<number> => {
-      const command = {
+      return await this.webhookFilterBackoffStrategy.execute({
         attemptsMade,
         environmentId: eventJob?.data?._environmentId,
         eventError,
         eventJob,
         organizationId: eventJob?.data?._organizationId,
         userId: eventJob?.data?._userId,
-      };
-
-      return await this.webhookFilterBackoffStrategy.execute(command);
+      });
     };
   };
+
+  private async organizationExist(data: IStandardDataDto): Promise<boolean> {
+    const { _organizationId } = data;
+
+    const organization = await this.organizationRepository.findOne({ _id: _organizationId });
+
+    return !!organization;
+  }
 }

@@ -25,6 +25,8 @@ export class SubscriberEntity {
 
   channels?: IChannelSettings[];
 
+  topics?: string[];
+
   _organizationId: OrganizationId;
 
   _environmentId: EnvironmentId;
@@ -42,6 +44,8 @@ export class SubscriberEntity {
   lastOnlineAt?: string;
 
   data?: SubscriberCustomData;
+
+  timezone?: string;
 }
 
 export type SubscriberDBModel = ChangePropsValueType<SubscriberEntity, '_environmentId' | '_organizationId'>;

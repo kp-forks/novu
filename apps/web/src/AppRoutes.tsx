@@ -1,9 +1,9 @@
 import { FeatureFlagsKeysEnum } from '@novu/shared';
+import { Navigate, Route, Routes } from 'react-router-dom';
 import { PrivatePageLayout } from './components/layout/components/PrivatePageLayout';
 import { PublicPageLayout } from './components/layout/components/PublicPageLayout';
-import { Navigate, Route, Routes } from 'react-router-dom';
 import { ROUTES } from './constants/routes';
-import { useAuth, useFeatureFlag } from './hooks';
+import { useFeatureFlag } from './hooks';
 import { ActivitiesPage } from './pages/activities/ActivitiesPage';
 import InvitationPage from './pages/auth/InvitationPage';
 import LoginPage from './pages/auth/LoginPage';
@@ -14,7 +14,14 @@ import { BrandingPage } from './pages/brand/BrandingPage';
 import { PromoteChangesPage } from './pages/changes/PromoteChangesPage';
 import { GetStartedPage } from './pages/get-started/GetStartedPage';
 import HomePage from './pages/HomePage';
-import { ApiKeysPage, WebhookPage } from './pages/settings/index';
+import {
+  ApiKeysPage,
+  WebhookPage,
+  AccessSecurityPage,
+  BillingPage,
+  TeamPage,
+  UserProfilePage,
+} from './pages/settings/index';
 import { SelectProviderPage } from './pages/integrations/components/SelectProviderPage';
 import { CreateProviderPage } from './pages/integrations/CreateProviderPage';
 import { IntegrationsListPage } from './pages/integrations/IntegrationsListPage';
@@ -47,54 +54,45 @@ import { TranslationRoutes } from './pages/TranslationPages';
 import { StudioOnboarding } from './pages/studio-onboarding/index';
 import { StudioOnboardingPreview } from './pages/studio-onboarding/preview';
 import { StudioOnboardingSuccess } from './pages/studio-onboarding/success';
-import { AccessSecurityPage, BillingPage, TeamPage, UserProfilePage } from './pages/settings';
 import { SettingsPageNew as SettingsPage } from './pages/settings/SettingsPageNew';
 import { OrganizationPage } from './pages/settings/organization';
 import { LayoutsPage } from './pages/layouts/LayoutsPage';
 import { StudioPageLayout } from './studio/StudioPageLayout';
 import { LocalStudioAuthenticator } from './studio/LocalStudioAuthenticator';
-import {
-  LocalStudioWorkflowLandingPage,
-  WorkflowsDetailPage,
-  WorkflowsStepEditorPage,
-  WorkflowsTestPage,
-} from './studio/components/workflows';
+import { LocalStudioWorkflowLandingPage, WorkflowsDetailPage, WorkflowsTestPage } from './studio/components/workflows';
 import { WorkflowsStepEditorPageV2 } from './pages/templates/editor_v2/TemplateStepEditorV2';
-import { useSegment } from './components/providers/SegmentProvider';
-import * as mixpanel from 'mixpanel-browser';
-import { useEffect } from 'react';
-import { GetStartedPageV2 } from './studio/components/GetStartedPageV2';
+import { IS_EE_AUTH_ENABLED } from './config/index';
+import { EnterpriseAuthRoutes } from './ee/clerk/EnterpriseAuthRoutes';
 import { novuOnboardedCookie } from './utils/cookies';
+import { EnterprisePrivatePageLayout } from './ee/clerk/components/EnterprisePrivatePageLayout';
+import { OnboardingPage } from './pages/playground/onboarding/Onboarding';
+import { PlaygroundPage } from './pages/playground/onboarding/PlaygroundPage';
+import { StudioStepEditorPage } from './studio/pages/StudioStepEditorPage';
+
+const AuthRoutes = () => {
+  const CommunityAuthRoutes = () => (
+    <Route element={<PublicPageLayout />}>
+      <Route path={ROUTES.AUTH_SIGNUP} element={<SignUpPage />} />
+      <Route path={ROUTES.AUTH_LOGIN} element={<LoginPage />} />
+      <Route path={ROUTES.AUTH_RESET_REQUEST} element={<PasswordResetPage />} />
+      <Route path={ROUTES.AUTH_RESET_TOKEN} element={<PasswordResetPage />} />
+      <Route path={ROUTES.AUTH_INVITATION_TOKEN} element={<InvitationPage />} />
+      <Route path={ROUTES.AUTH_APPLICATION} element={<QuestionnairePage />} />
+    </Route>
+  );
+
+  return IS_EE_AUTH_ENABLED ? EnterpriseAuthRoutes() : CommunityAuthRoutes();
+};
 
 export const AppRoutes = () => {
-  const isImprovedOnboardingEnabled = useFeatureFlag(FeatureFlagsKeysEnum.IS_IMPROVED_ONBOARDING_ENABLED);
-  const isMixpanelRecordingEnabled = useFeatureFlag(FeatureFlagsKeysEnum.IS_MIXPANEL_RECORDING_ENABLED);
   const isV2Enabled = useFeatureFlag(FeatureFlagsKeysEnum.IS_V2_ENABLED);
-  const segment = useSegment();
-  const { inPrivateRoute } = useAuth();
-
-  useEffect(() => {
-    if (!segment._mixpanelEnabled) {
-      return;
-    }
-
-    if (isMixpanelRecordingEnabled && inPrivateRoute) {
-      mixpanel.start_session_recording();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isMixpanelRecordingEnabled, inPrivateRoute]);
 
   return (
     <Routes>
-      <Route element={<PublicPageLayout />}>
-        <Route path={ROUTES.AUTH_SIGNUP} element={<SignUpPage />} />
-        <Route path={ROUTES.AUTH_LOGIN} element={<LoginPage />} />
-        <Route path={ROUTES.AUTH_RESET_REQUEST} element={<PasswordResetPage />} />
-        <Route path={ROUTES.AUTH_RESET_TOKEN} element={<PasswordResetPage />} />
-        <Route path={ROUTES.AUTH_INVITATION_TOKEN} element={<InvitationPage />} />
-        <Route path={ROUTES.AUTH_APPLICATION} element={<QuestionnairePage />} />
-      </Route>
-      <Route element={<PrivatePageLayout />}>
+      {AuthRoutes()}
+      <Route path={ROUTES.DASHBOARD_ONBOARDING} element={<OnboardingPage />} />
+      <Route path={ROUTES.DASHBOARD_PLAYGROUND} element={<PlaygroundPage />} />
+      <Route element={!IS_EE_AUTH_ENABLED ? <PrivatePageLayout /> : <EnterprisePrivatePageLayout />}>
         <Route
           path={ROUTES.PARTNER_INTEGRATIONS_VERCEL_LINK_PROJECTS}
           element={<LinkVercelProjectPage type="create" />}
@@ -126,8 +124,6 @@ export const AppRoutes = () => {
           <Route path=":identifier" element={<UpdateTenantPage />} />
         </Route>
         {isV2Enabled ? (
-          <Route path={ROUTES.GET_STARTED} element={<GetStartedPageV2 />} />
-        ) : isImprovedOnboardingEnabled ? (
           <Route path={ROUTES.GET_STARTED} element={<GetStartedPage />} />
         ) : (
           <Route path={ROUTES.GET_STARTED} element={<GetStarted />} />
@@ -138,34 +134,38 @@ export const AppRoutes = () => {
         <Route path={ROUTES.QUICK_START_SETUP_FRAMEWORK} element={<Setup />} />
         <Route path={ROUTES.QUICK_START_SETUP_SUCCESS} element={<InAppSuccess />} />
         <Route path={ROUTES.ACTIVITIES} element={<ActivitiesPage />} />
-        <Route path={ROUTES.SETTINGS} element={<SettingsPage />}>
-          <Route path="" element={<Navigate to={ROUTES.PROFILE} replace />} />
-          {/* TODO: Remove after the next deployment on 2024-06-18 */}
-          <Route path={ROUTES.BRAND_SETTINGS_DEPRECATED} element={<Navigate to={ROUTES.BRAND_SETTINGS} replace />} />
-          <Route path={ROUTES.BRAND_SETTINGS} element={<BrandingPage />} />
-          <Route path={ROUTES.ORGANIZATION} element={<OrganizationPage />} />
-          <Route path={ROUTES.TEAM_SETTINGS} element={<TeamPage />} />
-          <Route path={`${ROUTES.BILLING}/*`} element={<BillingPage />} />
-          <Route path={ROUTES.SECURITY} element={<AccessSecurityPage />} />
-          <Route path={`${ROUTES.SETTINGS}`} element={<Navigate to={ROUTES.PROFILE} replace />} />
-          <Route path="permissions" element={<Navigate to={ROUTES.SECURITY} replace />} />
-          <Route path="sso" element={<Navigate to={ROUTES.SETTINGS} replace />} />
-          <Route path="data-integrations" element={<Navigate to={ROUTES.SETTINGS} replace />} />
-          <Route path={ROUTES.PROFILE} element={<UserProfilePage />} />
-          <Route path={`${ROUTES.SETTINGS}/*`} element={<Navigate to={ROUTES.SETTINGS} replace />} />
-        </Route>
+        {!IS_EE_AUTH_ENABLED ? (
+          <Route path={ROUTES.SETTINGS} element={<SettingsPage />}>
+            <Route path="" element={<Navigate to={ROUTES.PROFILE} replace />} />
+            {/* TODO: Remove after the next deployment on 2024-06-18 */}
+            <Route path={ROUTES.BRAND_SETTINGS_DEPRECATED} element={<Navigate to={ROUTES.BRAND_SETTINGS} replace />} />
+            <Route path={ROUTES.BRAND_SETTINGS} element={<BrandingPage />} />
+            <Route path={ROUTES.ORGANIZATION} element={<OrganizationPage />} />
+            <Route path={ROUTES.TEAM_SETTINGS} element={<TeamPage />} />
+            <Route path={`${ROUTES.BILLING}/*`} element={<BillingPage />} />
+            <Route path={ROUTES.SECURITY} element={<AccessSecurityPage />} />
+            <Route path={`${ROUTES.SETTINGS}`} element={<Navigate to={ROUTES.PROFILE} replace />} />
+            <Route path="permissions" element={<Navigate to={ROUTES.SECURITY} replace />} />
+            <Route path="sso" element={<Navigate to={ROUTES.SETTINGS} replace />} />
+            <Route path="data-integrations" element={<Navigate to={ROUTES.SETTINGS} replace />} />
+            <Route path={ROUTES.PROFILE} element={<UserProfilePage />} />
+            <Route path={`${ROUTES.SETTINGS}/*`} element={<Navigate to={ROUTES.SETTINGS} replace />} />
+          </Route>
+        ) : null}
         <Route path={ROUTES.INTEGRATIONS} element={<IntegrationsListPage />}>
           <Route path="create" element={<SelectProviderPage />} />
           <Route path="create/:channel/:providerId" element={<CreateProviderPage />} />
           <Route path=":integrationId" element={<UpdateProviderPage />} />
         </Route>
-        <Route path={ROUTES.TEAM} element={<MembersInvitePage />} />
+        {!IS_EE_AUTH_ENABLED ? <Route path={ROUTES.TEAM} element={<MembersInvitePage />} /> : null}
         <Route path={ROUTES.CHANGES} element={<PromoteChangesPage />} />
         <Route path={ROUTES.SUBSCRIBERS} element={<SubscribersList />} />
         <Route path="/translations/*" element={<TranslationRoutes />} />
         <Route path={ROUTES.LAYOUT} element={<LayoutsPage />} />
-        <Route path={ROUTES.API_KEYS} element={<ApiKeysPage />} />
-        <Route path={ROUTES.WEBHOOK} element={<WebhookPage />} />
+        {/* The * in this case is for backwards compatibility with the previous version of these paths 
+        that included the environment name in the URL i.e. /api-keys/Development */}
+        <Route path={`${ROUTES.API_KEYS}/*`} element={<ApiKeysPage />} />
+        <Route path={`${ROUTES.WEBHOOK}/*`} element={<WebhookPage />} />
         <Route path={ROUTES.ANY} element={<HomePage />} />
       </Route>
 
@@ -178,7 +178,7 @@ export const AppRoutes = () => {
         />
         <Route path={ROUTES.STUDIO_FLOWS} element={<LocalStudioWorkflowLandingPage />} />
         <Route path={ROUTES.STUDIO_FLOWS_VIEW} element={<WorkflowsDetailPage />} />
-        <Route path={ROUTES.STUDIO_FLOWS_STEP_EDITOR} element={<WorkflowsStepEditorPage />} />
+        <Route path={ROUTES.STUDIO_FLOWS_STEP_EDITOR} element={<StudioStepEditorPage />} />
         <Route path={ROUTES.STUDIO_FLOWS_TEST} element={<WorkflowsTestPage />} />
         <Route path={ROUTES.STUDIO_ONBOARDING} element={<StudioOnboarding />} />
         <Route path={ROUTES.STUDIO_ONBOARDING_PREVIEW} element={<StudioOnboardingPreview />} />

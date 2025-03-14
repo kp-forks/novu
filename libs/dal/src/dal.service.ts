@@ -1,21 +1,26 @@
-import { Connection, ConnectOptions } from 'mongoose';
-import * as mongoose from 'mongoose';
+import mongoose, { Connection, ConnectOptions } from 'mongoose';
+import { AuthMechanism } from './types';
 
 export class DalService {
   connection: Connection;
 
   async connect(url: string, config: ConnectOptions = {}) {
     const baseConfig: ConnectOptions = {
-      maxPoolSize: +process.env.MONGO_MAX_POOL_SIZE || 500,
-      minPoolSize: +process.env.MONGO_MIN_POOL_SIZE || 10,
-      autoIndex: process.env.AUTO_CREATE_INDEXES === 'true',
-      maxIdleTimeMS: 1000 * 60 * 10,
+      autoIndex: process.env.MONGO_AUTO_CREATE_INDEXES === 'true',
+      maxIdleTimeMS: process.env.MONGO_MAX_IDLE_TIME_IN_MS ? Number(process.env.MONGO_MAX_IDLE_TIME_IN_MS) : 1000 * 30,
+      maxPoolSize: process.env.MONGO_MAX_POOL_SIZE ? Number(process.env.MONGO_MAX_POOL_SIZE) : 50,
+      minPoolSize: process.env.MONGO_MIN_POOL_SIZE ? Number(process.env.MONGO_MIN_POOL_SIZE) : 10,
+      authMechanism: (process.env.MONGO_AUTH_MECHANISM as AuthMechanism) || ('DEFAULT' as AuthMechanism),
     };
 
-    const instance = await mongoose.connect(url, {
+    const finalConfig = {
       ...baseConfig,
       ...config,
-    });
+    };
+    const instance = await mongoose.connect(url, finalConfig);
+    console.log(`[original config] Connecting to Mongo: ${JSON.stringify(baseConfig)}`);
+    console.log(`[override config] Connecting to Mongo: ${JSON.stringify(config)}`);
+    console.log(`[final config] Connecting to Mongo: ${JSON.stringify(finalConfig)}`);
 
     this.connection = instance.connection;
 

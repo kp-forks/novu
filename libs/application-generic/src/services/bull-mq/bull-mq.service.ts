@@ -1,3 +1,4 @@
+/* eslint-disable global-require */
 import {
   BulkJobOptions,
   ConnectionOptions as RedisConnectionOptions,
@@ -43,12 +44,9 @@ export class BullMqService {
   private _queue: Queue;
   private _worker: Worker;
 
-  public static readonly pro: boolean =
-    process.env.NOVU_MANAGED_SERVICE !== undefined;
+  public static readonly pro: boolean = process.env.NOVU_MANAGED_SERVICE !== undefined;
 
-  constructor(
-    private workflowInMemoryProviderService: WorkflowInMemoryProviderService
-  ) {}
+  constructor(private workflowInMemoryProviderService: WorkflowInMemoryProviderService) {}
 
   public get worker(): Worker {
     return this._worker;
@@ -109,15 +107,10 @@ export class BullMqService {
       }),
     };
 
-    // eslint-disable-next-line @typescript-eslint/naming-convention
-    const QueueClass = !BullMqService.pro
-      ? Queue
-      : require('@taskforcesh/bullmq-pro').QueuePro;
+    const QueueClass = !BullMqService.pro ? Queue : require('@taskforcesh/bullmq-pro').QueuePro;
 
     Logger.log(
-      `Creating queue ${topic}. BullMQ pro is ${
-        this.runningWithProQueue() ? 'Enabled' : 'Disabled'
-      }`,
+      `Creating queue ${topic}. BullMQ pro is ${this.runningWithProQueue() ? 'Enabled' : 'Disabled'}`,
       LOG_CONTEXT
     );
 
@@ -135,10 +128,7 @@ export class BullMqService {
     processor?: string | Processor<any, unknown | void, string>,
     workerOptions?: WorkerOptions
   ) {
-    // eslint-disable-next-line @typescript-eslint/naming-convention
-    const WorkerClass = !BullMqService.pro
-      ? Worker
-      : require('@taskforcesh/bullmq-pro').WorkerPro;
+    const WorkerClass = !BullMqService.pro ? Worker : require('@taskforcesh/bullmq-pro').WorkerPro;
 
     const { concurrency, connection, lockDuration, settings } = workerOptions;
 
@@ -156,9 +146,7 @@ export class BullMqService {
     };
 
     Logger.log(
-      `Creating worker ${topic}. BullMQ pro is ${
-        this.runningWithProQueue() ? 'Enabled' : 'Disabled'
-      }`,
+      `Creating worker ${topic}. BullMQ pro is ${this.runningWithProQueue() ? 'Enabled' : 'Disabled'}`,
       LOG_CONTEXT
     );
 
@@ -171,12 +159,7 @@ export class BullMqService {
     return this._worker;
   }
 
-  public add(
-    name: string,
-    data: BullMqJobData,
-    options: JobsOptions = {},
-    groupId?: string
-  ) {
+  public add(name: string, data: BullMqJobData, options: JobsOptions = {}, groupId?: string) {
     this._queue.add(name, data, {
       ...options,
       ...(BullMqService.pro && groupId
@@ -206,7 +189,7 @@ export class BullMqService {
 
       if (BullMqService.pro && job?.groupId) {
         // BulkJobOptions.group is not defined in BullMQ types, it is defined in BullMQ Pro
-        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+
         // @ts-ignore
         jobOptions.group = {
           id: job.groupId,
@@ -287,16 +270,9 @@ export class BullMqService {
         const doNotWaitActive = true;
 
         await this._worker.pause(doNotWaitActive);
-        Logger.verbose(
-          `Worker ${this._worker.name} pause succeeded`,
-          LOG_CONTEXT
-        );
+        Logger.verbose(`Worker ${this._worker.name} pause succeeded`, LOG_CONTEXT);
       } catch (error) {
-        Logger.error(
-          error,
-          `Worker ${this._worker.name} pause failed`,
-          LOG_CONTEXT
-        );
+        Logger.error(error, `Worker ${this._worker.name} pause failed`, LOG_CONTEXT);
 
         throw error;
       }
@@ -307,16 +283,9 @@ export class BullMqService {
     if (this._worker) {
       try {
         await this._worker.resume();
-        Logger.verbose(
-          `Worker ${this._worker.name} resume succeeded`,
-          LOG_CONTEXT
-        );
+        Logger.verbose(`Worker ${this._worker.name} resume succeeded`, LOG_CONTEXT);
       } catch (error) {
-        Logger.error(
-          error,
-          `Worker ${this._worker.name} resume failed`,
-          LOG_CONTEXT
-        );
+        Logger.error(error, `Worker ${this._worker.name} resume failed`, LOG_CONTEXT);
 
         throw error;
       }

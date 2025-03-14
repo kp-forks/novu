@@ -1,6 +1,9 @@
 import { Controller, useFormContext } from 'react-hook-form';
 import { ChannelTypeEnum } from '@novu/shared';
 
+import { useState } from 'react';
+import { Grid, SegmentedControl, Stack, useMantineTheme } from '@mantine/core';
+import { When } from '@novu/design-system';
 import { LackIntegrationAlert } from '../LackIntegrationAlert';
 import {
   useEnvironment,
@@ -10,15 +13,12 @@ import {
 } from '../../../../hooks';
 import { StepSettings } from '../../workflow/SideBar/StepSettings';
 import { useStepFormPath } from '../../hooks/useStepFormPath';
-import { useState } from 'react';
 import { useEditTemplateContent } from '../../hooks/useEditTemplateContent';
-import { Grid, SegmentedControl, Stack, useMantineTheme } from '@mantine/core';
 import { VariableManagementButton } from '../VariableManagementButton';
 import { CustomCodeEditor } from '../CustomCodeEditor';
 import { SmsPreview } from '../../../../components/workflow/preview';
 import { EditVariablesModal } from '../EditVariablesModal';
 import { useTemplateEditorForm } from '../TemplateEditorFormProvider';
-import { When } from '@novu/design-system';
 import { ControlVariablesForm } from '../ControlVariablesForm';
 
 const templateFields = ['content'];
@@ -26,7 +26,7 @@ const templateFields = ['content'];
 export function TemplateSMSEditor() {
   const [editVariablesModalOpened, setEditVariablesModalOpen] = useState(false);
   const { template } = useTemplateEditorForm();
-  const { environment, bridge } = useEnvironment({}, template?.bridge);
+  const { environment, bridge } = useEnvironment({ bridge: template?.bridge });
   const stepFormPath = useStepFormPath();
   const { control } = useFormContext();
   const variablesArray = useVariablesManager(templateFields);

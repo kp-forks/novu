@@ -12,7 +12,7 @@ import {
 } from '@novu/shared';
 
 import { ApiException } from '../../utils/exceptions';
-import { isRegularDelay, isRegularDigest } from '../../utils/digest';
+import { isRegularDigest } from '../../utils/digest';
 import { TimedDigestDelayService } from './timed-digest-delay.service';
 
 export class ComputeJobWaitDurationService {
@@ -32,33 +32,28 @@ export class ComputeJobWaitDurationService {
     const digestType = stepMetadata.type;
 
     if (digestType === DelayTypeEnum.SCHEDULED) {
-      const delayPath = (stepMetadata as IDelayScheduledMetadata).delayPath;
+      const { delayPath } = stepMetadata as IDelayScheduledMetadata;
       if (!delayPath) throw new ApiException(`Delay path not found`);
 
       const delayDate = payload[delayPath];
       const delay = differenceInMilliseconds(new Date(delayDate), new Date());
 
       if (delay < 0) {
-        throw new ApiException(
-          `Delay date at path ${delayPath} must be a future date`
-        );
+        throw new ApiException({
+          message: `Delay date at path must be a future date`,
+          delayPath,
+        });
       }
 
       return delay;
     } else if (isRegularDigest(digestType)) {
       if (this.isValidDelayOverride(overrides)) {
-        return this.toMilliseconds(
-          overrides.delay.amount as number,
-          overrides.delay.unit as DigestUnitEnum
-        );
+        return this.toMilliseconds(overrides.delay.amount as number, overrides.delay.unit as DigestUnitEnum);
       }
 
       const regularDigestMeta = stepMetadata as IDigestRegularMetadata;
 
-      return this.toMilliseconds(
-        regularDigestMeta.amount,
-        regularDigestMeta.unit
-      );
+      return this.toMilliseconds(regularDigestMeta.amount, regularDigestMeta.unit);
     } else if (digestType === DigestTypeEnum.TIMED) {
       const timedDigestMeta = stepMetadata as IDigestTimedMetadata;
 
@@ -69,45 +64,42 @@ export class ComputeJobWaitDurationService {
           ...timedDigestMeta.timed,
         },
       });
-    } else if (
-      (stepMetadata as IDelayRegularMetadata)?.unit &&
-      (stepMetadata as IDelayRegularMetadata)?.amount
-    ) {
+    } else if ((stepMetadata as IDelayRegularMetadata)?.unit && (stepMetadata as IDelayRegularMetadata)?.amount) {
       if (this.isValidDelayOverride(overrides)) {
-        return this.toMilliseconds(
-          overrides.delay.amount as number,
-          overrides.delay.unit as DigestUnitEnum
-        );
+        return this.toMilliseconds(overrides.delay.amount as number, overrides.delay.unit as DigestUnitEnum);
       }
 
       const regularDigestMeta = stepMetadata as IDelayRegularMetadata;
 
-      return this.toMilliseconds(
-        regularDigestMeta.amount,
-        regularDigestMeta.unit
-      );
+      return this.toMilliseconds(regularDigestMeta.amount, regularDigestMeta.unit);
     }
 
     return 0;
   }
 
   private toMilliseconds(amount: number, unit: DigestUnitEnum): number {
-    Logger.debug('Amount is: ' + amount);
-    Logger.debug('Unit is: ' + unit);
+    Logger.debug(`Amount is: ${amount}`);
+    Logger.debug(`Unit is: ${unit}`);
     Logger.verbose('Converting to milliseconds');
 
     let delay = 1000 * amount;
+    if (unit === DigestUnitEnum.MONTHS) {
+      delay *= 60 * 60 * 24 * 30;
+    }
+    if (unit === DigestUnitEnum.WEEKS) {
+      delay *= 60 * 60 * 24 * 7;
+    }
     if (unit === DigestUnitEnum.DAYS) {
-      delay = 60 * 60 * 24 * delay;
+      delay *= 60 * 60 * 24;
     }
     if (unit === DigestUnitEnum.HOURS) {
-      delay = 60 * 60 * delay;
+      delay *= 60 * 60;
     }
     if (unit === DigestUnitEnum.MINUTES) {
-      delay = 60 * delay;
+      delay *= 60;
     }
 
-    Logger.verbose('Amount of delay is: ' + delay + 'ms.');
+    Logger.verbose(`Amount of delay is: ${delay}ms.`);
 
     return delay;
   }
@@ -119,9 +111,7 @@ export class ComputeJobWaitDurationService {
 
     const isDelayAmountANumber = typeof overrides.delay.amount === 'number';
     const digestUnits = Object.values(DigestUnitEnum);
-    const includesValidDelayUnit = digestUnits.includes(
-      overrides.delay.unit as unknown as DigestUnitEnum
-    );
+    const includesValidDelayUnit = digestUnits.includes(overrides.delay.unit as unknown as DigestUnitEnum);
 
     return isDelayAmountANumber && includesValidDelayUnit;
   }

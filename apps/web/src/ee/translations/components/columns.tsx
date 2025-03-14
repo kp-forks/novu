@@ -13,23 +13,24 @@ import {
   When,
   withCellLoading,
 } from '@novu/design-system';
-import { useAuth, useEnvironment } from '../../../hooks';
 import { format } from 'date-fns';
-import React, { useState } from 'react';
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { FlagMap } from '../icons/flags';
 
-import { useNavigate } from 'react-router-dom';
+import { useEnvironment } from '../../../hooks';
 import { ITranslation, useFetchLocales } from '../hooks';
 import { useEditTranslationFileContext } from '../context/useEditTranslationFileContext';
 import { ReuploadIcon, Star, Warning } from '../icons';
 import { DeleteTranslationModal } from './TranslationGroup/DeleteTranslationModal';
+import { useGetDefaultLocale } from '../hooks/useGetDefaultLocale';
 
 const LanguageCell = ({ row: { original }, isLoading }: IExtendedCellProps<ITranslation>) => {
   const { getLocale } = useFetchLocales();
-  const { currentOrganization } = useAuth();
   const { isoLanguage, fileName } = original;
   const langName = getLocale(isoLanguage)?.langName;
-  const isDefaultLocale = currentOrganization?.defaultLocale === isoLanguage;
+  const { defaultLocale } = useGetDefaultLocale();
+  const isDefaultLocale = defaultLocale === isoLanguage;
   const Icon = FlagMap[isoLanguage];
   const { colorScheme } = useMantineColorScheme();
   const isDark = colorScheme === 'dark';
@@ -105,7 +106,7 @@ const UpdateCell = ({ row: { original }, isLoading }: IExtendedCellProps<ITransl
     if (!file) return;
     setLocale(isoLanguage);
     setIsTranslationExists(!!translations);
-    const path = !!translations ? 'replace' : 'edit';
+    const path = translations ? 'replace' : 'edit';
 
     await handleFileSelect(file);
     navigate(`/translations/edit/${groupIdentifier}/${isoLanguage}/${path}`);

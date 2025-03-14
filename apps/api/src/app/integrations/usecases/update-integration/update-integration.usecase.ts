@@ -1,14 +1,18 @@
 import { BadRequestException, ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { IntegrationEntity, IntegrationRepository } from '@novu/dal';
+import {
+  CommunityOrganizationRepository,
+  IntegrationEntity,
+  IntegrationRepository,
+  OrganizationEntity,
+} from '@novu/dal';
 import {
   AnalyticsService,
   buildIntegrationKey,
   encryptCredentials,
-  GetFeatureFlag,
-  GetFeatureFlagCommand,
   InvalidateCacheService,
+  FeatureFlagsService,
 } from '@novu/application-generic';
-import { CHANNELS_WITH_PRIMARY, FeatureFlagsKeysEnum } from '@novu/shared';
+import { ApiServiceLevelEnum, CHANNELS_WITH_PRIMARY, FeatureFlagsKeysEnum } from '@novu/shared';
 
 import { UpdateIntegrationCommand } from './update-integration.command';
 import { CheckIntegration } from '../check-integration/check-integration.usecase';
@@ -22,7 +26,8 @@ export class UpdateIntegration {
     private invalidateCache: InvalidateCacheService,
     private integrationRepository: IntegrationRepository,
     private analyticsService: AnalyticsService,
-    private getFeatureFlag: GetFeatureFlag
+    private featureFlagService: FeatureFlagsService,
+    private communityOrganizationRepository: CommunityOrganizationRepository
   ) {}
 
   private async calculatePriorityAndPrimaryForActive({
@@ -96,6 +101,27 @@ export class UpdateIntegration {
     return result;
   }
 
+  private async shouldUpdateRemoveNovuBranding(
+    command: UpdateIntegrationCommand,
+    existingIntegration: IntegrationEntity
+  ): Promise<boolean> {
+    const organization = await this.communityOrganizationRepository.findOne({ _id: command.organizationId });
+
+    const isRemoveNovuBrandingDefined = typeof command.removeNovuBranding !== 'undefined';
+    const isRemoveNovuBrandingChanged =
+      isRemoveNovuBrandingDefined && existingIntegration.removeNovuBranding !== command.removeNovuBranding;
+
+    if (!isRemoveNovuBrandingChanged) {
+      return false;
+    }
+
+    if (!organization || organization.apiServiceLevel === ApiServiceLevelEnum.FREE) {
+      return false;
+    }
+
+    return true;
+  }
+
   async execute(command: UpdateIntegrationCommand): Promise<IntegrationEntity> {
     Logger.verbose('Executing Update Integration Command');
 
@@ -126,14 +152,11 @@ export class UpdateIntegration {
       active: command.active,
     });
 
-    const isInvalidationDisabled = await this.getFeatureFlag.execute(
-      GetFeatureFlagCommand.create({
-        userId: 'system',
-        environmentId: 'system',
-        organizationId: command.organizationId,
-        key: FeatureFlagsKeysEnum.IS_INTEGRATION_INVALIDATION_DISABLED,
-      })
-    );
+    const isInvalidationDisabled = await this.featureFlagService.getFlag({
+      key: FeatureFlagsKeysEnum.IS_INTEGRATION_INVALIDATION_DISABLED,
+      defaultValue: false,
+      organization: { _id: command.organizationId } as OrganizationEntity,
+    });
 
     if (!isInvalidationDisabled) {
       await this.invalidateCache.invalidateQuery({
@@ -183,6 +206,11 @@ export class UpdateIntegration {
 
     if (command.conditions) {
       updatePayload.conditions = command.conditions;
+    }
+
+    const shouldUpdateRemoveNovuBranding = await this.shouldUpdateRemoveNovuBranding(command, existingIntegration);
+    if (shouldUpdateRemoveNovuBranding) {
+      updatePayload.removeNovuBranding = command.removeNovuBranding;
     }
 
     if (!Object.keys(updatePayload).length) {

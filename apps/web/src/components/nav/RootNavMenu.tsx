@@ -5,6 +5,7 @@ import {
   IconDomain,
   IconGroup,
   IconKey,
+  IconLaptop,
   IconOutlineMonitorHeart,
   IconRoute,
   IconSettings,
@@ -12,10 +13,12 @@ import {
   IconTranslate,
   IconViewQuilt,
   IconWebhook,
-} from '@novu/design-system';
+} from '@novu/novui/icons';
+import { FeatureFlagsKeysEnum } from '@novu/shared';
+import { useToggle } from '@mantine/hooks';
 import { ChangesCountBadge } from '../layout/components/ChangesCountBadge';
 import { ROUTES } from '../../constants/routes';
-import { useSegment } from '../../components/providers/SegmentProvider';
+import { useSegment } from '../providers/SegmentProvider';
 import { useEnvironment } from '../../hooks/useEnvironment';
 import { BaseEnvironmentEnum } from '../../constants/BaseEnvironmentEnum';
 import { useUserOnboardingStatus } from '../../api/hooks/useUserOnboardingStatus';
@@ -23,14 +26,20 @@ import { EnvironmentSelect } from './EnvironmentSelect';
 import { NavMenu } from './NavMenu';
 import { NavMenuLinkButton } from './NavMenuButton/NavMenuLinkButton';
 import { NavMenuSection } from './NavMenuSection';
-import { OrganizationSelect } from './OrganizationSelect/v2/OrganizationSelect';
+import { OrganizationSelect } from './OrganizationSelect/OrganizationSelect';
 import { RootNavMenuFooter } from './RootNavMenuFooter';
 import { VisibilityButton } from './VisibilityButton';
 import { FreeTrialSidebarWidget } from '../layout/components/FreeTrialSidebarWidget';
 import { parseUrl } from '../../utils/routeUtils';
+import { OrganizationSwitcher } from '../../ee/clerk';
+import { IS_SELF_HOSTED, IS_EE_AUTH_ENABLED } from '../../config/index';
 import { useFeatureFlag } from '../../hooks/useFeatureFlag';
-import { FeatureFlagsKeysEnum } from '@novu/shared';
 import { When } from '../utils/When';
+import { SidebarFooter } from '../layout/components/LocalStudioSidebar/SidebarFooter';
+import { useNavigateToLocalStudio } from '../../studio/hooks/useNavigateToLocalStudio';
+import { OpenLocalStudioModal } from '../../studio/components/OpenLocalStudioModal';
+import { OutlineButton } from '../../studio/components/OutlineButton';
+import { NewDashboardOptInWidget } from '../layout/components/v2/NewDashboardOptInWidget';
 
 const getEnvPageRoute = (route: ROUTES, env: BaseEnvironmentEnum) => parseUrl(route, { env });
 
@@ -39,6 +48,8 @@ export const RootNavMenu: React.FC = () => {
   const { updateOnboardingStatus, showOnboarding, isLoading: isLoadingOnboardingStatus } = useUserOnboardingStatus();
   const { readonly: isEnvReadonly, environment } = useEnvironment();
   const isV2Enabled = useFeatureFlag(FeatureFlagsKeysEnum.IS_V2_ENABLED);
+  const [isLocalStudioModalOpen, toggleLocalStudioModalOpen] = useToggle();
+  const { navigateToLocalStudio } = useNavigateToLocalStudio({ fallbackFn: toggleLocalStudioModalOpen });
 
   const handleHideOnboardingClick: React.MouseEventHandler = async () => {
     segment.track('Click Hide Get Started Page - [Get Started]');
@@ -48,10 +59,10 @@ export const RootNavMenu: React.FC = () => {
   return (
     <NavMenu variant="root">
       <NavMenuSection>
-        <OrganizationSelect />
+        {IS_EE_AUTH_ENABLED ? <OrganizationSwitcher /> : <OrganizationSelect />}
         <NavMenuLinkButton
           label="Get started"
-          isVisible={!isEnvReadonly && !isLoadingOnboardingStatus && showOnboarding}
+          isVisible={!isLoadingOnboardingStatus && showOnboarding}
           icon={<IconTaskAlt />}
           link={ROUTES.GET_STARTED}
           testId="side-nav-quickstart-link"
@@ -67,12 +78,14 @@ export const RootNavMenu: React.FC = () => {
           label="Integrations"
           testId="side-nav-integrations-link"
         />
-        <NavMenuLinkButton
-          label="Settings"
-          icon={<IconSettings />}
-          link={ROUTES.PROFILE}
-          testId="side-nav-settings-link"
-        />
+        {IS_EE_AUTH_ENABLED ? null : (
+          <NavMenuLinkButton
+            label="Settings"
+            icon={<IconSettings />}
+            link={ROUTES.PROFILE}
+            testId="side-nav-settings-link"
+          />
+        )}
       </NavMenuSection>
       <NavMenuSection>
         <EnvironmentSelect />
@@ -104,14 +117,14 @@ export const RootNavMenu: React.FC = () => {
           link={ROUTES.SUBSCRIBERS}
           testId="side-nav-subscribers-link"
         />
-        <NavMenuLinkButton
-          label="Tenants"
-          isVisible={true}
-          icon={<IconDomain />}
-          link={ROUTES.TENANTS}
-          testId="side-nav-tenants-link"
-        />
         <When truthy={!isV2Enabled}>
+          <NavMenuLinkButton
+            label="Tenants"
+            isVisible={true}
+            icon={<IconDomain />}
+            link={ROUTES.TENANTS}
+            testId="side-nav-tenants-link"
+          />
           <NavMenuLinkButton
             label="Layouts"
             icon={<IconViewQuilt />}
@@ -130,25 +143,33 @@ export const RootNavMenu: React.FC = () => {
           label="API keys"
           isVisible
           icon={<IconKey />}
-          link={getEnvPageRoute(
-            ROUTES.API_KEYS,
-            (environment?.name as BaseEnvironmentEnum) ?? BaseEnvironmentEnum.DEVELOPMENT
-          )}
+          link={ROUTES.API_KEYS}
           testId="side-nav-settings-api-keys"
         ></NavMenuLinkButton>
-        <NavMenuLinkButton
-          label="Inbound webhook"
-          isVisible
-          icon={<IconWebhook />}
-          link={getEnvPageRoute(
-            ROUTES.WEBHOOK,
-            (environment?.name as BaseEnvironmentEnum) ?? BaseEnvironmentEnum.DEVELOPMENT
-          )}
-          testId="side-nav-settings-inbound-webhook"
-        ></NavMenuLinkButton>
+        <When truthy={!isV2Enabled}>
+          <NavMenuLinkButton
+            label="Inbound webhook"
+            isVisible
+            icon={<IconWebhook />}
+            link={getEnvPageRoute(
+              ROUTES.WEBHOOK,
+              (environment?.name as BaseEnvironmentEnum) ?? BaseEnvironmentEnum.DEVELOPMENT
+            )}
+            testId="side-nav-settings-inbound-webhook"
+          ></NavMenuLinkButton>
+        </When>
       </NavMenuSection>
-      <FreeTrialSidebarWidget />
-      <RootNavMenuFooter />
+      <>
+        <SidebarFooter>
+          {!IS_SELF_HOSTED && IS_EE_AUTH_ENABLED && <NewDashboardOptInWidget />}
+          <FreeTrialSidebarWidget />
+          <OutlineButton fullWidth onClick={navigateToLocalStudio} Icon={IconLaptop}>
+            Open Local Studio
+          </OutlineButton>
+        </SidebarFooter>
+        {/** TODO: refactor when modal manager is available */}
+        {isLocalStudioModalOpen && <OpenLocalStudioModal isOpen toggleOpen={toggleLocalStudioModalOpen} />}
+      </>
     </NavMenu>
   );
 };

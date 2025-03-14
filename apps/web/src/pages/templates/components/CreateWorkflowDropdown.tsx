@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { Skeleton } from '@mantine/core';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faFile } from '@fortawesome/free-regular-svg-icons';
@@ -5,18 +6,16 @@ import { faDiagramNext } from '@fortawesome/free-solid-svg-icons';
 import styled from '@emotion/styled';
 
 import { Dropdown, PlusButton, Popover } from '@novu/design-system';
-import { IBlueprintTemplate } from '../../../api/types';
-import { useSegment } from '../../../components/providers/SegmentProvider';
-import { TemplateCreationSourceEnum } from '../shared';
-import { useFeatureFlag, useHoverOverItem } from '../../../hooks';
-import { EchoProjectDropDownItem } from './EchoProjectWaitList';
-import { FeatureFlagsKeysEnum } from '@novu/shared';
+import { FeatureFlagsKeysEnum, WorkflowCreationSourceEnum } from '@novu/shared';
 import { Button } from '@novu/novui';
 import { IconOutlineAdd } from '@novu/novui/icons';
+
+import { IBlueprintTemplate } from '../../../api/types';
+import { useSegment } from '../../../components/providers/SegmentProvider';
+import { useFeatureFlag, useHoverOverItem } from '../../../hooks';
+import { FrameworkProjectDropDownItem } from './FrameworkProjectWaitList';
 import { useDocsModal } from '../../../components/docs/useDocsModal';
-import { useEffect } from 'react';
 import { PATHS } from '../../../components/docs/docs.const';
-import { ROUTES } from '../../../constants/routes';
 
 const WIDTH = 172;
 
@@ -54,7 +53,7 @@ export const CreateWorkflowDropdown = ({
     if (!isV2Enabled) {
       return;
     }
-    setPath(PATHS[ROUTES.STUDIO_FLOWS] as string);
+    setPath(PATHS.WORKFLOW_INTRODUCTION);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isV2Enabled]);
 
@@ -90,7 +89,7 @@ export const CreateWorkflowDropdown = ({
         onClick={(event) => {
           segment.track('[Template Store] Click Create Notification Template', {
             templateIdentifier: 'Blank Workflow',
-            location: TemplateCreationSourceEnum.DROPDOWN,
+            location: WorkflowCreationSourceEnum.DROPDOWN,
           });
 
           onBlankWorkflowClick(event);
@@ -99,7 +98,7 @@ export const CreateWorkflowDropdown = ({
       >
         Blank workflow
       </Dropdown.Item>
-      <EchoProjectDropDownItem />
+      <FrameworkProjectDropDownItem />
       <Dropdown.Divider />
       {isLoading
         ? Array.from({ length: 3 }).map((_, index) => <DropdownItemSkeleton key={index} />)
@@ -121,7 +120,7 @@ export const CreateWorkflowDropdown = ({
                   onClick={() => {
                     segment.track('[Template Store] Click Create Notification Template', {
                       templateIdentifier: template?.triggers[0]?.identifier || '',
-                      location: TemplateCreationSourceEnum.DROPDOWN,
+                      location: WorkflowCreationSourceEnum.DROPDOWN,
                     });
 
                     onTemplateClick(template);
@@ -143,7 +142,7 @@ export const CreateWorkflowDropdown = ({
         icon={<FontAwesomeIcon icon={faDiagramNext} />}
         onClick={(event) => {
           segment.track('[Template Store] Click Open Template Store', {
-            location: TemplateCreationSourceEnum.DROPDOWN,
+            location: WorkflowCreationSourceEnum.DROPDOWN,
           });
 
           onAllTemplatesClick(event);

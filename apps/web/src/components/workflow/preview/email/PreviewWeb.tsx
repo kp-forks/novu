@@ -95,6 +95,7 @@ export const PreviewWeb = ({
   selectedLocale,
   locales,
   bridge = false,
+  source = 'studio',
   classNames = {},
 }: {
   integration?: any;
@@ -111,8 +112,10 @@ export const PreviewWeb = ({
     frame?: string;
     content?: string;
     contentContainer?: string;
+    skeleton?: string;
   };
   bridge?: boolean;
+  source?: 'studio' | 'playground' | 'dashboard';
 }) => {
   const [isEditOverlayVisible, setIsEditOverlayVisible] = useState(false);
 
@@ -165,9 +168,11 @@ export const PreviewWeb = ({
                       <div data-test-id="preview-subject" className={classes.subject}>
                         {subject}
                       </div>
-                      <div data-test-id="preview-from" className={classes.from}>
-                        <EmailIntegrationInfo integration={integration} field={'from'} />
-                      </div>
+                      <When truthy={source !== 'playground'}>
+                        <div data-test-id="preview-from" className={classes.from}>
+                          <EmailIntegrationInfo integration={integration} field={'from'} />
+                        </div>
+                      </When>
                     </>
                   )}
                 </div>
@@ -188,7 +193,7 @@ export const PreviewWeb = ({
             </When>
             <div className={cx(classes.content, classNames.content)}>
               <When truthy={loading}>
-                <ContentSkeleton />
+                <ContentSkeleton className={classNames.skeleton} />
               </When>
               <When truthy={!loading}>
                 <ErrorBoundary
@@ -210,7 +215,7 @@ export const PreviewWeb = ({
               Issue with rendering email without html
               <Frame className={classes.frame} data-test-id="preview-content" initialContent={content}>
                     <></>
-                  </Frame>*/}
+                  </Frame> */}
                 </ErrorBoundary>
 
                 {error && error.template?.content && error.template?.content?.message && (

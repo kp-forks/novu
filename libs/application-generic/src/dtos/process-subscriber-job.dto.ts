@@ -1,11 +1,12 @@
 import {
   ISubscribersDefine,
   ITenantDefine,
+  StatelessControls,
   SubscriberSourceEnum,
   TriggerRequestCategoryEnum,
 } from '@novu/shared';
 import { SubscriberEntity } from '@novu/dal';
-import { DiscoverWorkflowOutput } from '@novu/framework';
+import { DiscoverWorkflowOutput } from '@novu/framework/internal';
 
 import {
   IBulkJobParams,
@@ -14,6 +15,7 @@ import {
 
 export interface IProcessSubscriberDataDto {
   environmentId: string;
+  environmentName: string;
   organizationId: string;
   userId: string;
   transactionId: string;
@@ -27,6 +29,7 @@ export interface IProcessSubscriberDataDto {
   _subscriberSource: SubscriberSourceEnum;
   requestCategory?: TriggerRequestCategoryEnum;
   bridge?: { url: string; workflow: DiscoverWorkflowOutput };
+  controls?: StatelessControls;
 }
 
 export interface IProcessSubscriberJobDto extends IJobParams {

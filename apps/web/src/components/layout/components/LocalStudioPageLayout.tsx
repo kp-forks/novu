@@ -1,30 +1,33 @@
-import * as Sentry from '@sentry/react';
+import { ErrorBoundary } from '@sentry/react';
 import { Outlet, useLocation } from 'react-router-dom';
-import styled from '@emotion/styled';
 import { css } from '@novu/novui/css';
+import { WithLoadingSkeleton } from '@novu/novui';
+import { Box } from '@novu/novui/jsx';
+import { useEffect } from 'react';
 import { LocalStudioHeader } from './LocalStudioHeader/LocalStudioHeader';
 import { LocalStudioSidebar } from './LocalStudioSidebar';
 import { isStudioOnboardingRoute } from '../../../studio/utils/routing';
+import { AppShell } from './AppShell';
+import { ContentShell } from './ContentShell';
+import { WorkflowsDetailPage } from '../../../studio/components/workflows/index';
+import { useTelemetry } from '../../../hooks/useNovuAPI';
+import { useStudioState } from '../../../studio/hooks';
+import { useSegment } from '../../providers/SegmentProvider';
 
-const AppShell = styled.div`
-  display: flex;
-  width: 100vw;
-  height: 100vh;
-  min-width: 1024px;
-`;
-
-const ContentShell = styled.div`
-  display: flex;
-  flex-direction: column;
-  flex: 1 1 0%;
-  overflow: hidden; // for appropriate scroll
-`;
-
-export function LocalStudioPageLayout() {
+export const LocalStudioPageLayout: WithLoadingSkeleton = () => {
   const { pathname } = useLocation();
+  const state = useStudioState();
+  const segment = useSegment();
+
+  useEffect(() => {
+    if (state.anonymousId) {
+      segment.setAnonymousId(state.anonymousId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state]);
 
   return (
-    <Sentry.ErrorBoundary
+    <ErrorBoundary
       fallback={({ error, eventId }) => (
         <>
           Sorry, but something went wrong. <br />
@@ -47,6 +50,20 @@ export function LocalStudioPageLayout() {
           <Outlet />
         </ContentShell>
       </AppShell>
-    </Sentry.ErrorBoundary>
+    </ErrorBoundary>
+  );
+};
+
+LocalStudioPageLayout.LoadingDisplay = LoadingDisplay;
+
+function LoadingDisplay() {
+  return (
+    <AppShell>
+      <LocalStudioSidebar.LoadingDisplay />
+      <ContentShell>
+        <Box bg="surface.page" h="250" />
+        <WorkflowsDetailPage.LoadingDisplay />
+      </ContentShell>
+    </AppShell>
   );
 }

@@ -3,6 +3,7 @@ import { Controller, useFormContext } from 'react-hook-form';
 import { Grid, SegmentedControl, Stack, useMantineTheme } from '@mantine/core';
 import { useState } from 'react';
 
+import { When } from '@novu/design-system';
 import { useEnvironment, useHasActiveIntegrations, useVariablesManager } from '../../../../hooks';
 import { useStepFormPath } from '../../hooks/useStepFormPath';
 import { StepSettings } from '../../workflow/SideBar/StepSettings';
@@ -15,7 +16,6 @@ import { EditVariablesModal } from '../EditVariablesModal';
 import { VariableManagementButton } from '../VariableManagementButton';
 import { useEditTemplateContent } from '../../hooks/useEditTemplateContent';
 import { useTemplateEditorForm } from '../TemplateEditorFormProvider';
-import { When } from '@novu/design-system';
 import { ControlVariablesForm } from '../ControlVariablesForm';
 
 const templateFields = ['content'];
@@ -31,7 +31,7 @@ export function TemplateChatEditor() {
   const [controlVariables, setControlVariables] = useState();
   const [editVariablesModalOpened, setEditVariablesModalOpen] = useState(false);
   const { template } = useTemplateEditorForm();
-  const { bridge } = useEnvironment({}, template?.bridge);
+  const { bridge } = useEnvironment({ bridge: template?.bridge });
 
   return (
     <>

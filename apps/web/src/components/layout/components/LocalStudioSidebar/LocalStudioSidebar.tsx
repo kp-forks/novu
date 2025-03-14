@@ -1,27 +1,60 @@
-import { css } from '@novu/novui/css';
-import { FC } from 'react';
-import { useDiscover } from '../../../../studio/hooks/useBridgeAPI';
-import { LocalStudioSidebarContent } from './LocalStudioSidebarContent';
+import { WithLoadingSkeleton } from '@novu/novui';
+import { IconCloudQueue } from '@novu/novui/icons';
+import { css, cx } from '@novu/novui/css';
+import { HStack } from '@novu/novui/jsx';
 
-export const LocalStudioSidebar: FC = () => {
+import { useDiscover } from '../../../../studio/hooks/useBridgeAPI';
+import { Aside } from '../../../nav/Aside';
+import { LocalStudioSidebarContent } from './LocalStudioSidebarContent';
+import { SidebarFooter } from './SidebarFooter';
+import { FCBase } from '../../../../types';
+
+export const LocalStudioSidebar: WithLoadingSkeleton = () => {
   const { isLoading, data } = useDiscover();
 
   return (
-    <aside
-      className={css({
-        position: 'sticky',
-        top: 0,
-        zIndex: 'auto',
-        backgroundColor: 'transparent',
-        borderRight: 'none',
-        width: '272px',
-        height: '100%',
-        p: '50',
-        bg: 'surface.panel',
-        overflowY: 'auto',
-      })}
-    >
+    <Aside>
       <LocalStudioSidebarContent workflows={data?.workflows ?? []} isLoading={isLoading} />
-    </aside>
+      <SidebarFooter>
+        <HrefButton />
+      </SidebarFooter>
+    </Aside>
   );
 };
+
+/*
+ * We need to use href here because in local development, it shouldn't open a new tab as a popup.
+ * because of 'Cross-Origin-Opener-Policy': 'same-origin'
+ */
+export const HrefButton: FCBase = () => {
+  return (
+    <a href={window.location.origin} target={'_blank'} className={cx(css({}))}>
+      <HStack
+        className={cx(
+          css({
+            fontSize: '14px',
+            fontStyle: 'normal',
+            fontWeight: '600',
+            lineHeight: '20px',
+            bg: 'transparent',
+            justifyContent: 'center',
+            borderColor: 'rgb(48, 164, 108)',
+            border: 'solid',
+            borderRadius: '8px',
+            padding: '8px 16px 8px 16px',
+            color: { base: '#525266', _dark: 'white' },
+          })
+        )}
+      >
+        <IconCloudQueue />
+        Open Cloud Dashboard
+      </HStack>
+    </a>
+  );
+};
+
+LocalStudioSidebar.LoadingDisplay = () => (
+  <Aside>
+    <LocalStudioSidebarContent.LoadingDisplay />
+  </Aside>
+);

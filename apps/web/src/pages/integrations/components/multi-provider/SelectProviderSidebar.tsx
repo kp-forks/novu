@@ -15,6 +15,7 @@ import {
   useTabsStyles,
 } from '@novu/design-system';
 
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useDebounce } from '../../../../hooks';
 import { ChannelTitle } from '../../../templates/components/ChannelTitle';
 import type { IIntegratedProvider } from '../../types';
@@ -25,7 +26,6 @@ import { sortProviders } from './sort-providers';
 import { When } from '../../../../components/utils/When';
 import { CONTEXT_PATH } from '../../../../config';
 import { useProviders } from '../../useProviders';
-import { useLocation, useNavigate } from 'react-router-dom';
 import { ROUTES } from '../../../../constants/routes';
 
 const filterSearch = (list, search: string) =>
@@ -84,8 +84,6 @@ export function SelectProviderSidebar({
 
       if (pathname.includes(ROUTES.INTEGRATIONS_CREATE)) {
         navigate(`${ROUTES.INTEGRATIONS_CREATE}?scrollTo=${channel}`);
-
-        return;
       }
     },
     [navigate, pathname]
@@ -181,6 +179,10 @@ export function SelectProviderSidebar({
           type={'search'}
           onChange={(e) => {
             debouncedSearchChange(e.target.value);
+            if (e.target.value === '') {
+              // added timeout of 1000ms so that scroll happens after provider list is rendered
+              setTimeout(() => scrollToElement(selectedTab), 1000);
+            }
           }}
           mb={20}
           placeholder={'Search a provider...'}

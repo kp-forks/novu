@@ -1,10 +1,10 @@
-import { ChannelTypeEnum, ICredentials } from '@novu/shared';
-import { BaseSmsHandler } from './base.handler';
+import { ChannelTypeEnum, ICredentials, SmsProviderIdEnum } from '@novu/shared';
 import { FortySixElksSmsProvider } from '@novu/providers';
+import { BaseSmsHandler } from './base.handler';
 
 export class FortySixElksHandler extends BaseSmsHandler {
   constructor() {
-    super('forty-six-elks', ChannelTypeEnum.SMS);
+    super(SmsProviderIdEnum.FortySixElks, ChannelTypeEnum.SMS);
   }
   buildProvider(credentials: ICredentials) {
     this.provider = new FortySixElksSmsProvider({

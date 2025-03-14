@@ -2,26 +2,28 @@ import { expect } from 'chai';
 import { UserSession } from '@novu/testing';
 import { MessageRepository, NotificationTemplateEntity, SubscriberEntity, SubscriberRepository } from '@novu/dal';
 import {
-  StepTypeEnum,
-  ChannelCTATypeEnum,
-  TemplateVariableTypeEnum,
   ActorTypeEnum,
-  SystemAvatarIconEnum,
+  ChannelCTATypeEnum,
   ChannelTypeEnum,
+  StepTypeEnum,
+  SystemAvatarIconEnum,
+  TemplateVariableTypeEnum,
 } from '@novu/shared';
+import { Novu } from '@novu/api';
 import { mapToDto } from '../utils/notification-mapper';
+import { initNovuClassSdk } from '../../shared/helpers/e2e/sdk/e2e-sdk.helper';
 
-describe('Get Notifications - /inbox/notifications (GET)', async () => {
+describe('Get Notifications - /inbox/notifications (GET) #novu-v2', async () => {
   let session: UserSession;
   let template: NotificationTemplateEntity;
   let subscriber: SubscriberEntity | null;
   const messageRepository = new MessageRepository();
   const subscriberRepository = new SubscriberRepository();
-
+  let novuClient: Novu;
   beforeEach(async () => {
     session = new UserSession();
     await session.initialize();
-
+    novuClient = initNovuClassSdk(session);
     subscriber = await subscriberRepository.findBySubscriberId(session.environment._id, session.subscriberId);
     template = await session.createTemplate({
       noFeedId: true,
@@ -91,12 +93,17 @@ describe('Get Notifications - /inbox/notifications (GET)', async () => {
 
   const triggerEvent = async (templateToTrigger: NotificationTemplateEntity, times = 1) => {
     const promises: Array<Promise<unknown>> = [];
-    for (let i = 0; i < times; i++) {
-      promises.push(session.triggerEvent(templateToTrigger.triggers[0].identifier, session.subscriberId));
+    for (let i = 0; i < times; i += 1) {
+      promises.push(
+        novuClient.trigger({
+          workflowId: templateToTrigger.triggers[0].identifier,
+          to: { subscriberId: session.subscriberId },
+        })
+      );
     }
 
     await Promise.all(promises);
-    await session.awaitRunningJobs(templateToTrigger._id);
+    await session.waitForJobCompletion(templateToTrigger._id);
   };
 
   const removeUndefinedDeep = (obj) => {
@@ -124,6 +131,15 @@ describe('Get Notifications - /inbox/notifications (GET)', async () => {
 
     expect(status).to.equal(400);
     expect(body.message[0]).to.equal('The after cursor must be a valid MongoDB ObjectId');
+  });
+
+  it('should throw exception when filtering for unread and archived notifications', async function () {
+    await triggerEvent(template);
+
+    const { body, status } = await getNotifications({ limit: 1, read: false, archived: true });
+
+    expect(status).to.equal(400);
+    expect(body.message).to.equal('Filtering for unread and archived notifications is not supported.');
   });
 
   it('should include fields from message entity', async function () {
@@ -253,7 +269,7 @@ describe('Get Notifications - /inbox/notifications (GET)', async () => {
       new Date(body.data[1].createdAt).getTime()
     );
     expect(body.hasMore).to.be.false;
-    expect(body.data.every((message) => message.read)).to.be.true;
+    expect(body.data.every((message) => message.isRead)).to.be.true;
   });
 
   it('should filter by archived', async function () {
@@ -277,7 +293,7 @@ describe('Get Notifications - /inbox/notifications (GET)', async () => {
       new Date(body.data[1].createdAt).getTime()
     );
     expect(body.hasMore).to.be.false;
-    expect(body.data.every((message) => message.archived)).to.be.true;
+    expect(body.data.every((message) => message.isArchived)).to.be.true;
   });
 
   it('should filter by archived with pagination', async function () {
@@ -301,7 +317,7 @@ describe('Get Notifications - /inbox/notifications (GET)', async () => {
       new Date(firstPageBody.data[1].createdAt).getTime()
     );
     expect(firstPageBody.hasMore).to.be.true;
-    expect(firstPageBody.data.every((message) => message.archived)).to.be.true;
+    expect(firstPageBody.data.every((message) => message.isArchived)).to.be.true;
 
     const { body: secondPageBody, status: secondPageStatus } = await getNotifications({
       limit,
@@ -316,6 +332,6 @@ describe('Get Notifications - /inbox/notifications (GET)', async () => {
       new Date(secondPageBody.data[1].createdAt).getTime()
     );
     expect(secondPageBody.hasMore).to.be.false;
-    expect(secondPageBody.data.every((message) => message.archived)).to.be.true;
+    expect(secondPageBody.data.every((message) => message.isArchived)).to.be.true;
   });
 });

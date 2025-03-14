@@ -13,3 +13,6 @@ export * from './user.service';
 export * from './user.session';
 export * from './utils';
 export * from './workflow-override.service';
+export * from './ee/ee.repository.factory';
+export * from './ee/clerk-client.mock';
+export * from './ee/clerk-mock-data';

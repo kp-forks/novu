@@ -1,10 +1,6 @@
-import { Injectable, NotFoundException, Logger } from '@nestjs/common';
-import * as _ from 'lodash';
-import {
-  TopicEntity,
-  TopicRepository,
-  TopicSubscribersRepository,
-} from '@novu/dal';
+import { Injectable } from '@nestjs/common';
+import _ from 'lodash';
+import { TopicEntity, TopicRepository, TopicSubscribersRepository } from '@novu/dal';
 import {
   ISubscribersDefine,
   ITopic,
@@ -14,7 +10,7 @@ import {
   TriggerRecipientSubscriber,
 } from '@novu/shared';
 
-import { PinoLogger } from '../../logging';
+import { PinoLogger } from 'nestjs-pino';
 import { InstrumentUsecase } from '../../instrumentation';
 import { ApiException } from '../../utils/exceptions';
 import { SubscriberProcessQueueService } from '../../services/queues/subscriber-process-queue.service';
@@ -23,101 +19,70 @@ import { IProcessSubscriberBulkJobDto } from '../../dtos';
 
 const LOG_CONTEXT = 'TriggerMulticastUseCase';
 const QUEUE_CHUNK_SIZE = Number(process.env.MULTICAST_QUEUE_CHUNK_SIZE) || 100;
-const SUBSCRIBER_TOPIC_DISTINCT_BATCH_SIZE =
-  Number(process.env.SUBSCRIBER_TOPIC_DISTINCT_BATCH_SIZE) || 100;
+const SUBSCRIBER_TOPIC_DISTINCT_BATCH_SIZE = Number(process.env.SUBSCRIBER_TOPIC_DISTINCT_BATCH_SIZE) || 100;
 
-const isNotTopic = (
-  recipient: TriggerRecipient
-): recipient is TriggerRecipientSubscriber => !isTopic(recipient);
+const isNotTopic = (recipient: TriggerRecipient): recipient is TriggerRecipientSubscriber => !isTopic(recipient);
 
 const isTopic = (recipient: TriggerRecipient): recipient is ITopic =>
-  (recipient as ITopic).type &&
-  (recipient as ITopic).type === TriggerRecipientsTypeEnum.TOPIC;
+  (recipient as ITopic).type && (recipient as ITopic).type === TriggerRecipientsTypeEnum.TOPIC;
 
 @Injectable()
 export class TriggerMulticast {
   constructor(
     private subscriberProcessQueueService: SubscriberProcessQueueService,
     private topicSubscribersRepository: TopicSubscribersRepository,
-    private topicRepository: TopicRepository
+    private topicRepository: TopicRepository,
+    private logger: PinoLogger
   ) {}
 
   @InstrumentUsecase()
   async execute(command: TriggerMulticastCommand) {
-    {
-      const {
-        environmentId,
-        organizationId,
-        to: recipients,
-        actor,
-        userId,
-      } = command;
+    const { environmentId, organizationId, to: recipients, actor } = command;
 
-      const mappedRecipients = Array.isArray(recipients)
-        ? recipients
-        : [recipients];
+    const mappedRecipients = Array.isArray(recipients) ? recipients : [recipients];
 
-      const { singleSubscribers, topicKeys } =
-        splitByRecipientType(mappedRecipients);
-      const subscribersToProcess = Array.from(singleSubscribers.values());
+    const { singleSubscribers, topicKeys } = splitByRecipientType(mappedRecipients);
+    const subscribersToProcess = Array.from(singleSubscribers.values());
 
-      if (subscribersToProcess.length > 0) {
-        await this.sendToProcessSubscriberService(
-          command,
-          subscribersToProcess,
-          SubscriberSourceEnum.SINGLE
-        );
+    if (subscribersToProcess.length > 0) {
+      await this.sendToProcessSubscriberService(command, subscribersToProcess, SubscriberSourceEnum.SINGLE);
+    }
+
+    const topics = await this.getTopicsByTopicKeys(organizationId, environmentId, topicKeys);
+
+    this.validateTopicExist(topics, topicKeys);
+
+    const topicIds = topics.map((topic) => topic._id);
+    const singleSubscriberIds = Array.from(singleSubscribers.keys());
+    let subscribersList: ISubscribersDefine[] = [];
+    const getTopicDistinctSubscribersGenerator = this.topicSubscribersRepository.getTopicDistinctSubscribers({
+      query: {
+        _organizationId: organizationId,
+        _environmentId: environmentId,
+        topicIds,
+        excludeSubscribers: singleSubscriberIds,
+      },
+      batchSize: SUBSCRIBER_TOPIC_DISTINCT_BATCH_SIZE,
+    });
+
+    for await (const externalSubscriberIdGroup of getTopicDistinctSubscribersGenerator) {
+      const externalSubscriberId = externalSubscriberIdGroup._id;
+
+      if (actor && actor.subscriberId === externalSubscriberId) {
+        continue;
       }
 
-      const topics = await this.getTopicsByTopicKeys(
-        organizationId,
-        environmentId,
-        topicKeys
-      );
+      subscribersList.push({ subscriberId: externalSubscriberId });
 
-      this.validateTopicExist(topics, topicKeys);
+      if (subscribersList.length === SUBSCRIBER_TOPIC_DISTINCT_BATCH_SIZE) {
+        await this.sendToProcessSubscriberService(command, subscribersList, SubscriberSourceEnum.TOPIC);
 
-      const topicIds = topics.map((topic) => topic._id);
-      const singleSubscriberIds = Array.from(singleSubscribers.keys());
-      let subscribersList: ISubscribersDefine[] = [];
-      const getTopicDistinctSubscribersGenerator =
-        await this.topicSubscribersRepository.getTopicDistinctSubscribers({
-          query: {
-            _organizationId: organizationId,
-            _environmentId: environmentId,
-            topicIds: topicIds,
-            excludeSubscribers: singleSubscriberIds,
-          },
-          batchSize: SUBSCRIBER_TOPIC_DISTINCT_BATCH_SIZE,
-        });
-
-      for await (const externalSubscriberIdGroup of getTopicDistinctSubscribersGenerator) {
-        const externalSubscriberId = externalSubscriberIdGroup._id;
-
-        if (actor && actor.subscriberId === externalSubscriberId) {
-          continue;
-        }
-
-        subscribersList.push({ subscriberId: externalSubscriberId });
-
-        if (subscribersList.length === SUBSCRIBER_TOPIC_DISTINCT_BATCH_SIZE) {
-          await this.sendToProcessSubscriberService(
-            command,
-            subscribersList,
-            SubscriberSourceEnum.TOPIC
-          );
-
-          subscribersList = [];
-        }
+        subscribersList = [];
       }
+    }
 
-      if (subscribersList.length > 0) {
-        await this.sendToProcessSubscriberService(
-          command,
-          subscribersList,
-          SubscriberSourceEnum.TOPIC
-        );
-      }
+    if (subscribersList.length > 0) {
+      await this.sendToProcessSubscriberService(command, subscribersList, SubscriberSourceEnum.TOPIC);
     }
   }
 
@@ -136,33 +101,23 @@ export class TriggerMulticast {
     );
   }
 
-  private validateTopicExist(
-    topics: Pick<TopicEntity, '_id' | 'key'>[],
-    topicKeys: Set<string>
-  ) {
+  private validateTopicExist(topics: Pick<TopicEntity, '_id' | 'key'>[], topicKeys: Set<string>) {
     if (topics.length === topicKeys.size) {
       return;
     }
 
     const storageTopicsKeys = topics.map((topic) => topic.key);
-    const notFoundTopics = [...topicKeys].filter(
-      (topicKey) => !storageTopicsKeys.includes(topicKey)
-    );
+    const notFoundTopics = [...topicKeys].filter((topicKey) => !storageTopicsKeys.includes(topicKey));
 
     if (notFoundTopics.length > 0) {
-      throw new NotFoundException(
-        `Topic with key ${notFoundTopics.join()} not found in current environment`
-      );
+      this.logger.warn(`Topic with key ${notFoundTopics.join()} not found in current environment`);
     }
   }
 
-  private async subscriberProcessQueueAddBulk(
-    jobs: IProcessSubscriberBulkJobDto[]
-  ) {
+  private async subscriberProcessQueueAddBulk(jobs: IProcessSubscriberBulkJobDto[]) {
     return await Promise.all(
-      _.chunk(jobs, QUEUE_CHUNK_SIZE).map(
-        (chunk: IProcessSubscriberBulkJobDto[]) =>
-          this.subscriberProcessQueueService.addBulk(chunk)
+      _.chunk(jobs, QUEUE_CHUNK_SIZE).map((chunk: IProcessSubscriberBulkJobDto[]) =>
+        this.subscriberProcessQueueService.addBulk(chunk)
       )
     );
   }
@@ -199,10 +154,7 @@ export const splitByRecipientType = (
       } else {
         const subscribersDefine = buildSubscriberDefine(recipient);
 
-        acc.singleSubscribers.set(
-          subscribersDefine.subscriberId,
-          subscribersDefine
-        );
+        acc.singleSubscribers.set(subscribersDefine.subscriberId, subscribersDefine);
       }
 
       return acc;
@@ -214,9 +166,7 @@ export const splitByRecipientType = (
   );
 };
 
-export const buildSubscriberDefine = (
-  recipient: TriggerRecipientSubscriber
-): ISubscribersDefine => {
+export const buildSubscriberDefine = (recipient: TriggerRecipientSubscriber): ISubscribersDefine => {
   if (typeof recipient === 'string') {
     return { subscriberId: recipient };
   } else {
@@ -262,14 +212,16 @@ export const mapSubscribersToJobs = (
         identifier: command.identifier,
         payload: command.payload,
         overrides: command.overrides,
-        subscriber: subscriber,
+        subscriber,
         templateId: command.template._id,
-        _subscriberSource: _subscriberSource,
+        _subscriberSource,
         requestCategory: command.requestCategory,
+        controls: command.controls,
         bridge: {
           url: command.bridgeUrl,
           workflow: command.bridgeWorkflow,
         },
+        environmentName: command.environmentName,
       },
       groupId: command.organizationId,
     };

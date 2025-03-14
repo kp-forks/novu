@@ -9,6 +9,8 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { UserSessionData } from '@novu/shared';
+import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiExcludeController } from '@nestjs/swagger/dist/decorators/api-exclude-controller.decorator';
 import { UserSession } from '../shared/framework/user.decorator';
 import { CreateFeed } from './usecases/create-feed/create-feed.usecase';
 import { CreateFeedCommand } from './usecases/create-feed/create-feed.command';
@@ -17,7 +19,6 @@ import { GetFeeds } from './usecases/get-feeds/get-feeds.usecase';
 import { GetFeedsCommand } from './usecases/get-feeds/get-feeds.command';
 import { DeleteFeed } from './usecases/delete-feed/delete-feed.usecase';
 import { DeleteFeedCommand } from './usecases/delete-feed/delete-feed.command';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { FeedResponseDto } from './dto/feed-response.dto';
 import { ExternalApiAccessible } from '../auth/framework/external-api.decorator';
 import { ApiCommonResponses, ApiResponse } from '../shared/framework/response.decorator';
@@ -28,6 +29,7 @@ import { UserAuthentication } from '../shared/framework/swagger/api.key.security
 @UseInterceptors(ClassSerializerInterceptor)
 @UserAuthentication()
 @ApiTags('Feeds')
+@ApiExcludeController()
 export class FeedsController {
   constructor(
     private createFeedUsecase: CreateFeed,
